@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>MacroCore</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="icon" href="../public/favicon.ico">
+</head>
+<body>
+  <div class="app-container" id="app">
+
+    <!-- ========== ONBOARDING ========== -->
+    <div class="onboarding" id="onboarding">
+      <!-- Progress bar (hidden on welcome) -->
+      <div class="onboarding-progress" id="onboarding-progress" style="display:none">
+        <button class="btn btn-ghost" id="onboarding-back">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+        <div class="progress-bar-track">
+          <div class="progress-bar-segment" id="prog-1"></div>
+          <div class="progress-bar-segment" id="prog-2"></div>
+          <div class="progress-bar-segment" id="prog-3"></div>
+          <div class="progress-bar-segment" id="prog-4"></div>
+          <div class="progress-bar-segment" id="prog-5"></div>
+        </div>
+      </div>
+
+      <div class="onboarding-content">
+        <!-- Step: Welcome -->
+        <div class="onboarding-step active" id="step-welcome">
+          <div class="welcome-screen">
+            <div class="welcome-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+            </div>
+            <h1 class="font-display">MacroCore</h1>
+            <p>Smart nutrition that adapts to you. One number, not a spreadsheet.</p>
+            <button class="btn btn-primary" id="btn-get-started" style="max-width:20rem;margin-top:2.5rem">
+              Get Started
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+            <p class="sub-text">Takes about 60 seconds</p>
+          </div>
+        </div>
+
+        <!-- Step: Basics -->
+        <div class="onboarding-step" id="step-basics">
+          <div class="step-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            <h2 class="font-display">About You</h2>
+          </div>
+          <p class="step-desc">We'll use this to personalize your targets</p>
+          <div class="step-fields">
+            <div>
+              <label class="label">Name</label>
+              <input type="text" class="input" id="ob-name" placeholder="Your name">
+            </div>
+            <div class="grid-2">
+              <div>
+                <label class="label">Age</label>
+                <input type="number" class="input" id="ob-age" value="30">
+              </div>
+              <div>
+                <label class="label">Sex</label>
+                <div class="sex-selector">
+                  <button class="sex-btn selected" data-sex="male">Male</button>
+                  <button class="sex-btn" data-sex="female">Female</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-footer">
+            <button class="btn btn-primary" id="btn-basics-next" disabled>
+              Continue
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step: Body -->
+        <div class="onboarding-step" id="step-body">
+          <div class="step-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.3 15.3a2.4 2.4 0 0 1 0 3.4l-2.6 2.6a2.4 2.4 0 0 1-3.4 0L2.7 8.7a2.41 2.41 0 0 1 0-3.4l2.6-2.6a2.41 2.41 0 0 1 3.4 0Z"/><path d="m14.5 12.5 2-2"/></svg>
+            <h2 class="font-display">Body Stats</h2>
+          </div>
+          <p class="step-desc">Used for accurate calorie calculation</p>
+          <div class="step-fields">
+            <div>
+              <label class="label">Height</label>
+              <div class="grid-2">
+                <div class="input-with-suffix">
+                  <input type="number" class="input" id="ob-height-ft" value="5">
+                  <span class="input-suffix">ft</span>
+                </div>
+                <div class="input-with-suffix">
+                  <input type="number" class="input" id="ob-height-in" value="10">
+                  <span class="input-suffix">in</span>
+                </div>
+              </div>
+            </div>
+            <div>
+              <label class="label">Current Weight</label>
+              <div class="input-with-suffix">
+                <input type="number" class="input" id="ob-weight" value="180">
+                <span class="input-suffix">lbs</span>
+              </div>
+            </div>
+          </div>
+          <div class="step-footer">
+            <button class="btn btn-primary" id="btn-body-next">
+              Continue
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step: Activity -->
+        <div class="onboarding-step" id="step-activity">
+          <div class="step-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/></svg>
+            <h2 class="font-display">Activity Level</h2>
+          </div>
+          <p class="step-desc">How active are you on a typical week?</p>
+          <div class="step-fields" id="activity-options">
+            <button class="selection-btn" data-activity="sedentary">
+              <p class="label-text">Sedentary</p>
+              <p class="desc-text">Little to no exercise</p>
+            </button>
+            <button class="selection-btn" data-activity="light">
+              <p class="label-text">Lightly Active</p>
+              <p class="desc-text">Light exercise 1-3 days/week</p>
+            </button>
+            <button class="selection-btn selected" data-activity="moderate">
+              <p class="label-text">Moderately Active</p>
+              <p class="desc-text">Moderate exercise 3-5 days/week</p>
+            </button>
+            <button class="selection-btn" data-activity="active">
+              <p class="label-text">Active</p>
+              <p class="desc-text">Hard exercise 6-7 days/week</p>
+            </button>
+            <button class="selection-btn" data-activity="very_active">
+              <p class="label-text">Very Active</p>
+              <p class="desc-text">Very hard exercise + physical job</p>
+            </button>
+          </div>
+          <div class="step-footer">
+            <button class="btn btn-primary" id="btn-activity-next">
+              Continue
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step: Goal -->
+        <div class="onboarding-step" id="step-goal">
+          <div class="step-header">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <h2 class="font-display">Your Goal</h2>
+          </div>
+          <p class="step-desc">We'll adjust your macros to match</p>
+          <div class="step-fields" id="goal-options">
+            <button class="selection-btn selected" data-goal="lose">
+              <div class="goal-option"><span class="emoji">📉</span><p class="label-text">Lose Weight</p></div>
+            </button>
+            <button class="selection-btn" data-goal="maintain">
+              <div class="goal-option"><span class="emoji">⚖️</span><p class="label-text">Maintain Weight</p></div>
+            </button>
+            <button class="selection-btn" data-goal="gain">
+              <div class="goal-option"><span class="emoji">💪</span><p class="label-text">Build Muscle</p></div>
+            </button>
+          </div>
+          <div id="rate-section">
+            <label class="label" style="margin-top:1rem">Rate: <span id="rate-display">1</span> lb/week</label>
+            <div class="rate-selector">
+              <button class="rate-btn" data-rate="0.5">0.5</button>
+              <button class="rate-btn selected" data-rate="1">1</button>
+              <button class="rate-btn" data-rate="1.5">1.5</button>
+              <button class="rate-btn" data-rate="2">2</button>
+            </div>
+            <p class="step-desc" style="margin-top:0.5rem;margin-bottom:0" id="rate-hint">0.5-1 lb/week is recommended for sustainable loss</p>
+          </div>
+          <div class="step-footer">
+            <button class="btn btn-primary" id="btn-goal-next">
+              See My Plan
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Step: Results -->
+        <div class="onboarding-step" id="step-results">
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:2rem">
+            <div class="welcome-icon" style="width:4rem;height:4rem;border-radius:1rem;background:hsl(var(--success)/0.1);margin-bottom:1rem">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--success))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 15-3.086-6.172A2 2 0 0 0 16.12 8H7.88a2 2 0 0 0-1.794 1.106L3 15"/><path d="M3.5 13.5h17"/><path d="m21 15-1 6H4l-1-6"/></svg>
+            </div>
+            <h2 class="font-display" style="font-size:1.25rem;font-weight:700;color:hsl(var(--foreground));margin-bottom:0.25rem">Your Plan is Ready</h2>
+            <p class="step-desc" style="margin-bottom:1.5rem">Here are your personalized daily targets</p>
+
+            <div class="results-card">
+              <p class="big-number font-display" id="result-calories">2200</p>
+              <p class="big-label">calories per day</p>
+              <div class="grid-3" style="margin-top:1.25rem">
+                <div class="macro-card">
+                  <p class="macro-label protein">Protein</p>
+                  <p class="macro-value font-display" id="result-protein">165g</p>
+                </div>
+                <div class="macro-card">
+                  <p class="macro-label carbs">Carbs</p>
+                  <p class="macro-value font-display" id="result-carbs">220g</p>
+                </div>
+                <div class="macro-card">
+                  <p class="macro-label fats">Fats</p>
+                  <p class="macro-value font-display" id="result-fats">73g</p>
+                </div>
+              </div>
+            </div>
+
+            <p style="font-size:0.75rem;color:hsl(var(--muted-foreground));margin:1.5rem 0;max-width:20rem">
+              These targets adapt weekly based on your progress and adherence
+            </p>
+
+            <div class="step-footer" style="width:100%">
+              <button class="btn btn-primary" id="btn-start-tracking">
+                Start Tracking
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== HOME PAGE ========== -->
+    <div class="page" id="page-home">
+      <header class="page-header">
+        <div class="header-row">
+          <div>
+            <p class="greeting-text" id="greeting-text"></p>
+            <h1 class="font-display">Today's Target</h1>
+          </div>
+          <div class="week-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+            <span>Week 4</span>
+          </div>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <!-- Calorie Ring -->
+        <div class="calorie-ring-wrap">
+          <button class="calorie-ring-btn" id="calorie-ring-btn">
+            <div style="position:relative;width:13rem;height:13rem">
+              <svg class="calorie-ring-svg" viewBox="0 0 100 100">
+                <circle class="calorie-ring-bg" cx="50" cy="50" r="45"/>
+                <circle class="calorie-ring-progress" id="calorie-ring-circle" cx="50" cy="50" r="45" stroke-dasharray="282.74" stroke-dashoffset="282.74"/>
+              </svg>
+              <div class="calorie-ring-center">
+                <span class="current-cal font-display" id="ring-current">0</span>
+                <span class="target-cal" id="ring-target">of 2,200 cal</span>
+              </div>
+            </div>
+            <div class="remaining-label">
+              <span id="ring-remaining">2,200 cal remaining</span>
+              <svg class="chevron" id="ring-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+          </button>
+          <div class="macro-breakdown" id="macro-breakdown">
+            <div class="macro-grid">
+              <div class="macro-card">
+                <span class="macro-label protein">Protein</span>
+                <p class="macro-value font-display"><span id="macro-p-cur">0</span><small>/<span id="macro-p-tar">165</span>g</small></p>
+                <div class="macro-bar-track"><div class="macro-bar-fill protein" id="macro-p-bar" style="width:0%"></div></div>
+              </div>
+              <div class="macro-card">
+                <span class="macro-label carbs">Carbs</span>
+                <p class="macro-value font-display"><span id="macro-c-cur">0</span><small>/<span id="macro-c-tar">220</span>g</small></p>
+                <div class="macro-bar-track"><div class="macro-bar-fill carbs" id="macro-c-bar" style="width:0%"></div></div>
+              </div>
+              <div class="macro-card">
+                <span class="macro-label fats">Fats</span>
+                <p class="macro-value font-display"><span id="macro-f-cur">0</span><small>/<span id="macro-f-tar">73</span>g</small></p>
+                <div class="macro-bar-track"><div class="macro-bar-fill fats" id="macro-f-bar" style="width:0%"></div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Weekly Progress -->
+        <div class="card" id="weekly-progress-card">
+          <div class="flex-between" style="margin-bottom:1rem">
+            <div>
+              <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--muted-foreground))">This Week</h3>
+              <p style="font-size:1.5rem;font-weight:700;color:hsl(var(--foreground))" class="font-display">
+                <span id="weekly-avg">181.5</span>
+                <span style="font-size:0.875rem;font-weight:400;color:hsl(var(--muted-foreground))">lbs avg</span>
+              </p>
+            </div>
+            <div class="trend-badge" id="weekly-trend-badge">
+              <svg id="trend-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+              <span id="trend-label">On track</span>
+            </div>
+          </div>
+          <div class="chart-container" id="weekly-chart"></div>
+        </div>
+
+        <!-- Today's Meals -->
+        <div>
+          <h2 class="section-label">Today's Meals</h2>
+          <div id="today-log"></div>
+        </div>
+      </div>
+
+      <!-- FAB -->
+      <button class="fab" id="fab-log">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+      </button>
+    </div>
+
+    <!-- ========== MEALS PAGE ========== -->
+    <div class="page" id="page-meals">
+      <header class="page-header">
+        <h1 class="font-display">AI Meal Planner</h1>
+        <p id="meals-macro-summary"></p>
+      </header>
+      <div class="page-content">
+        <div style="display:flex;flex-direction:column;gap:0.5rem">
+          <input type="text" class="input" id="meal-preferences" placeholder="Preferences (e.g. vegetarian, no dairy, high protein...)">
+          <button class="btn btn-primary" id="btn-generate-meal">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+            Generate Meal Plan
+          </button>
+        </div>
+        <div id="meal-plan-output"></div>
+      </div>
+    </div>
+
+    <!-- ========== PROGRESS PAGE ========== -->
+    <div class="page" id="page-progress">
+      <header class="page-header">
+        <h1 class="font-display">Progress</h1>
+        <p>Your journey over time</p>
+      </header>
+      <div class="page-content">
+        <div class="stats-grid" id="progress-stats"></div>
+        <div class="card" id="weight-trend-card">
+          <div class="chart-header">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+            <h3>Weight Trend</h3>
+          </div>
+          <div class="chart-container chart-tall" id="weight-trend-chart"></div>
+        </div>
+        <div class="card" id="adherence-card">
+          <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:1rem">Calorie Adherence</h3>
+          <div class="chart-container" id="adherence-chart"></div>
+          <p class="chart-note">% of daily calorie target</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== GOALS PAGE ========== -->
+    <div class="page" id="page-goals">
+      <header class="page-header">
+        <h1 class="font-display">Goals</h1>
+        <p>Auto-adjusted weekly</p>
+      </header>
+      <div class="page-content">
+        <!-- Current Targets -->
+        <div class="card">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
+            <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground))">Current Targets</h3>
+          </div>
+          <div class="text-center" style="margin-bottom:1rem">
+            <p class="font-display" style="font-size:2.5rem;font-weight:700;color:hsl(var(--foreground))" id="goals-calories">2200</p>
+            <p style="font-size:0.875rem;color:hsl(var(--muted-foreground))">calories / day</p>
+          </div>
+          <div class="grid-3">
+            <div class="macro-card">
+              <p class="macro-label protein">Protein</p>
+              <p class="macro-value font-display" id="goals-protein">165g</p>
+            </div>
+            <div class="macro-card">
+              <p class="macro-label carbs">Carbs</p>
+              <p class="macro-value font-display" id="goals-carbs">220g</p>
+            </div>
+            <div class="macro-card">
+              <p class="macro-label fats">Fats</p>
+              <p class="macro-value font-display" id="goals-fats">73g</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- How Adjustments Work -->
+        <div class="card">
+          <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:0.75rem">How Adjustments Work</h3>
+          <div style="display:flex;flex-direction:column;gap:0.75rem">
+            <div class="how-it-works-step">
+              <div class="step-number"><span>1</span></div>
+              <p>Weekly check-in captures your weight</p>
+            </div>
+            <div class="how-it-works-step">
+              <div class="step-number"><span>2</span></div>
+              <p>7-day average compared to previous week</p>
+            </div>
+            <div class="how-it-works-step">
+              <div class="step-number"><span>3</span></div>
+              <p>Macros adjusted based on rate of change</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Adjustment History -->
+        <div class="card">
+          <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:0.75rem">Adjustment History</h3>
+          <div style="display:flex;flex-direction:column;gap:0.75rem">
+            <div class="adjustment-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+              <div class="adjustment-info">
+                <div class="adj-header">
+                  <span class="adj-week">Week 3</span>
+                  <svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                  <span class="adj-change">Calories reduced by 100</span>
+                </div>
+                <p class="adj-reason">Adherence was high, weight stalled</p>
+              </div>
+            </div>
+            <div class="adjustment-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+              <div class="adjustment-info">
+                <div class="adj-header">
+                  <span class="adj-week">Week 2</span>
+                  <svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                  <span class="adj-change">Protein increased to 165g</span>
+                </div>
+                <p class="adj-reason">Based on body weight recalculation</p>
+              </div>
+            </div>
+            <div class="adjustment-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+              <div class="adjustment-info">
+                <div class="adj-header">
+                  <span class="adj-week">Week 1</span>
+                  <svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                  <span class="adj-change">Initial targets set</span>
+                </div>
+                <p class="adj-reason">Based on onboarding data</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ========== SETTINGS PAGE ========== -->
+    <div class="page" id="page-settings">
+      <header class="page-header">
+        <h1 class="font-display">Settings</h1>
+        <p>Customize your experience</p>
+      </header>
+      <div class="page-content" id="settings-list"></div>
+    </div>
+
+    <!-- Settings Panel Overlay -->
+    <div class="settings-panel-overlay" id="settings-overlay"></div>
+    <div class="settings-panel" id="settings-panel">
+      <div class="settings-panel-content" id="settings-panel-content"></div>
+    </div>
+
+    <!-- ========== BOTTOM NAV ========== -->
+    <nav class="bottom-nav" id="bottom-nav" style="display:none">
+      <div class="bottom-nav-inner">
+        <button class="nav-item active" data-page="home">
+          <div class="nav-icon-wrap">
+            <div class="nav-indicator"></div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </div>
+          <span>Today</span>
+        </button>
+        <button class="nav-item" data-page="meals">
+          <div class="nav-icon-wrap">
+            <div class="nav-indicator"></div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m16 2-2.3 2.3a3 3 0 0 0 0 4.2l1.8 1.8a3 3 0 0 0 4.2 0L22 8"/><path d="M15 15 3.3 3.3a4.2 4.2 0 0 0 0 6l7.3 7.3a4.2 4.2 0 0 0 6 0L15 15Zm0 0 7 7"/><path d="m2.1 21.8 6.4-6.3"/><path d="m19 5-7 7"/></svg>
+          </div>
+          <span>Meals</span>
+        </button>
+        <button class="nav-item" data-page="progress">
+          <div class="nav-icon-wrap">
+            <div class="nav-indicator"></div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>
+          </div>
+          <span>Progress</span>
+        </button>
+        <button class="nav-item" data-page="goals">
+          <div class="nav-icon-wrap">
+            <div class="nav-indicator"></div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+          <span>Goals</span>
+        </button>
+        <button class="nav-item" data-page="settings">
+          <div class="nav-icon-wrap">
+            <div class="nav-indicator"></div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <span>Settings</span>
+        </button>
+      </div>
+    </nav>
+
+    <!-- ========== QUICK LOG SHEET ========== -->
+    <div class="sheet-overlay" id="quicklog-overlay"></div>
+    <div class="sheet" id="quicklog-sheet">
+      <div class="sheet-handle"><div></div></div>
+      <div class="sheet-header">
+        <h3 class="font-display">Log Food</h3>
+        <button class="btn btn-ghost" id="quicklog-close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+      </div>
+      <div class="meal-chips" id="meal-chips"></div>
+      <div class="search-wrap">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="text" placeholder="Search foods..." id="food-search">
+      </div>
+      <div class="sheet-body">
+        <p class="food-list-label">Quick Add</p>
+        <div class="food-list" id="food-list"></div>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

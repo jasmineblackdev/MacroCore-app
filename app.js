@@ -9,6 +9,9 @@
   const SUPABASE_URL = "https://xftrbpjruitppdcdqzep.supabase.co";
   const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmdHJicGpydWl0cHBkY2RxemVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4Mzg5NzgsImV4cCI6MjA4NjQxNDk3OH0.e1Q4qbgUGRPi8VJsol1HdXKv5rUAH3F6V3i6EVDVsC8";
 
+  // Initialize Supabase client
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
   // ── Default Profile ──────────────────────────────────────
   const DEFAULT_PROFILE = {
     name: "",
@@ -28,25 +31,46 @@
     protein: 165,
     carbs: 220,
     fats: 73,
+    exclusions: [],
   };
 
-  // ── State ────────────────────────────────────────────────
-  // Reset if coming from React version (different runtime marker)
-  if (!localStorage.getItem("macrocore_vanilla")) {
-    localStorage.removeItem("macrocore_profile");
-    localStorage.setItem("macrocore_vanilla", "1");
+  // ══════════════════════════════════════════════════════════
+  // CACHE LAYER (localStorage)
+  // ══════════════════════════════════════════════════════════
+
+  function cacheSet(key, data) {
+    try {
+      localStorage.setItem("mc_" + key, JSON.stringify({ data: data, ts: Date.now() }));
+    } catch (_) { /* quota exceeded — silently fail */ }
   }
-  let profile = loadProfile();
-  let foodEntries = [
-    { id: "1", name: "Greek Yogurt", calories: 130, protein: 17, carbs: 6, fats: 4, meal: "breakfast" },
-    { id: "2", name: "Banana", calories: 105, protein: 1.3, carbs: 27, fats: 0.4, meal: "breakfast" },
-    { id: "3", name: "Chicken Breast", calories: 165, protein: 31, carbs: 0, fats: 3.6, meal: "lunch" },
-    { id: "4", name: "Brown Rice (1 cup)", calories: 216, protein: 5, carbs: 45, fats: 1.8, meal: "lunch" },
-  ];
+
+  function cacheGet(key) {
+    try {
+      const raw = localStorage.getItem("mc_" + key);
+      if (!raw) return null;
+      return JSON.parse(raw).data;
+    } catch (_) { return null; }
+  }
+
+  function cacheRemove(key) {
+    localStorage.removeItem("mc_" + key);
+  }
+
+  function todayStr() {
+    return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+  }
+
+  // ── State ────────────────────────────────────────────────
+  let currentUser = null;
+  let profile = { ...DEFAULT_PROFILE };
+  let foodEntries = [];
+  let weightLogs = []; // { date, weight }
+  let mealPlanMeals = [];
+  let savedMealPlanId = null;
+  let adjustments = []; // { created_at, prev_calories, new_calories, ... reason }
   let macroExpanded = false;
   let quickLogOpen = false;
   let selectedMeal = "lunch";
-  let mealPlanMeals = [];
   let mealPlanLoading = false;
 
   // ── Quick Foods DB ───────────────────────────────────────
@@ -75,34 +99,6 @@
     snack: "🍿 Snack",
   };
 
-  // ── Sample Data ──────────────────────────────────────────
-  const WEIGHT_DATA = [
-    { day: "Mon", weight: 182.4 },
-    { day: "Tue", weight: 183.1 },
-    { day: "Wed", weight: 181.8 },
-    { day: "Thu", weight: 182.0 },
-    { day: "Fri", weight: 181.2 },
-    { day: "Sat", weight: 180.8 },
-    { day: "Sun", weight: 180.5 },
-  ];
-
-  const WEEKLY_WEIGHTS = [
-    { week: "W1", avg: 185.2 },
-    { week: "W2", avg: 184.0 },
-    { week: "W3", avg: 182.8 },
-    { week: "W4", avg: 181.5 },
-  ];
-
-  const ADHERENCE_DATA = [
-    { day: "Mon", pct: 95 },
-    { day: "Tue", pct: 88 },
-    { day: "Wed", pct: 102 },
-    { day: "Thu", pct: 91 },
-    { day: "Fri", pct: 78 },
-    { day: "Sat", pct: 110 },
-    { day: "Sun", pct: 96 },
-  ];
-
   const MEAL_PLAN_ORDER = ["breakfast", "morning_snack", "lunch", "afternoon_snack", "dinner"];
   const MEAL_PLAN_LABELS = {
     breakfast: "Breakfast",
@@ -113,19 +109,172 @@
   };
 
   // ══════════════════════════════════════════════════════════
+  // AUTH
+  // ══════════════════════════════════════════════════════════
+
+  let authMode = "signin"; // "signin" | "signup"
+
+  function showAuth() {
+    document.getElementById("auth-overlay").classList.remove("hidden");
+    document.getElementById("onboarding").style.display = "none";
+    document.getElementById("bottom-nav").style.display = "none";
+  }
+
+  function hideAuth() {
+    document.getElementById("auth-overlay").classList.add("hidden");
+  }
+
+  function toggleAuthMode() {
+    authMode = authMode === "signin" ? "signup" : "signin";
+    document.getElementById("auth-title").textContent =
+      authMode === "signin" ? "Welcome to MacroCore" : "Create Account";
+    document.getElementById("auth-subtitle").textContent =
+      authMode === "signin" ? "Sign in to sync your data across devices" : "Sign up to get started";
+    document.getElementById("auth-submit").textContent =
+      authMode === "signin" ? "Sign In" : "Sign Up";
+    document.getElementById("auth-toggle-text").textContent =
+      authMode === "signin" ? "Don't have an account?" : "Already have an account?";
+    document.getElementById("auth-toggle-btn").textContent =
+      authMode === "signin" ? "Sign Up" : "Sign In";
+    document.getElementById("auth-error").style.display = "none";
+  }
+
+  function showAuthError(msg) {
+    var el = document.getElementById("auth-error");
+    el.textContent = msg;
+    el.style.display = "block";
+    el.style.background = "hsl(var(--destructive) / 0.1)";
+    el.style.color = "hsl(var(--destructive))";
+  }
+
+  async function handleAuthSubmit(e) {
+    e.preventDefault();
+    const email = document.getElementById("auth-email").value.trim();
+    const password = document.getElementById("auth-password").value;
+    const btn = document.getElementById("auth-submit");
+    btn.disabled = true;
+    btn.textContent = authMode === "signin" ? "Signing in..." : "Creating account...";
+    document.getElementById("auth-error").style.display = "none";
+
+    try {
+      let result;
+      if (authMode === "signup") {
+        result = await supabase.auth.signUp({ email: email, password: password });
+        if (result.error) throw result.error;
+        // Check if email confirmation is required
+        if (result.data.user && !result.data.session) {
+          // Email confirmation needed — auto sign in instead
+          // (Supabase created the user but requires confirmation)
+          // Try signing in directly in case confirm is disabled
+          var signInResult = await supabase.auth.signInWithPassword({ email: email, password: password });
+          if (signInResult.error) {
+            // Confirmation IS required — show message and switch to sign-in mode
+            showAuthSuccess("Account created! Check your email to confirm, then sign in.");
+            btn.disabled = false;
+            // Directly set sign-in mode (don't use toggleAuthMode which would flip it)
+            authMode = "signin";
+            document.getElementById("auth-title").textContent = "Welcome to MacroCore";
+            document.getElementById("auth-subtitle").textContent = "Sign in to sync your data across devices";
+            btn.textContent = "Sign In";
+            document.getElementById("auth-toggle-text").textContent = "Don't have an account?";
+            document.getElementById("auth-toggle-btn").textContent = "Sign Up";
+            return;
+          }
+          // If sign-in worked, onAuthStateChange will handle the rest
+        }
+      } else {
+        result = await supabase.auth.signInWithPassword({ email: email, password: password });
+        if (result.error) throw result.error;
+      }
+      // onAuthStateChange will handle the rest
+    } catch (err) {
+      showAuthError(err.message || "Authentication failed");
+      btn.disabled = false;
+      btn.textContent = authMode === "signin" ? "Sign In" : "Sign Up";
+    }
+  }
+
+  function showAuthSuccess(msg) {
+    var el = document.getElementById("auth-error");
+    el.textContent = msg;
+    el.style.display = "block";
+    el.style.background = "hsl(var(--success) / 0.1)";
+    el.style.color = "hsl(var(--success))";
+  }
+
+  async function handleSignOut() {
+    await supabase.auth.signOut();
+    currentUser = null;
+    profile = { ...DEFAULT_PROFILE };
+    foodEntries = [];
+    weightLogs = [];
+    mealPlanMeals = [];
+    adjustments = [];
+    // Clear all cached data
+    Object.keys(localStorage).forEach(function (key) {
+      if (key.startsWith("mc_")) localStorage.removeItem(key);
+    });
+    showAuth();
+  }
+
+  async function handleDeleteAccount() {
+    if (!currentUser) return;
+    var confirmed = window.confirm(
+      "Are you sure you want to delete your account? This will permanently erase all your data and cannot be undone."
+    );
+    if (!confirmed) return;
+
+    var doubleConfirm = window.confirm(
+      "This is irreversible. All your profile, food logs, weight history, meal plans, and adjustment history will be deleted forever. Continue?"
+    );
+    if (!doubleConfirm) return;
+
+    try {
+      var uid = currentUser.id;
+      // Delete all user data from tables
+      await Promise.all([
+        supabase.from("food_entries").delete().eq("user_id", uid),
+        supabase.from("weight_logs").delete().eq("user_id", uid),
+        supabase.from("meal_plans").delete().eq("user_id", uid),
+        supabase.from("adjustments").delete().eq("user_id", uid),
+        supabase.from("profiles").delete().eq("id", uid),
+      ]);
+
+      // Delete auth account via RPC (requires the delete_own_account function)
+      await supabase.rpc("delete_own_account");
+
+      // Clear local state
+      currentUser = null;
+      profile = { ...DEFAULT_PROFILE };
+      foodEntries = [];
+      weightLogs = [];
+      mealPlanMeals = [];
+      adjustments = [];
+      Object.keys(localStorage).forEach(function (key) {
+        if (key.startsWith("mc_")) localStorage.removeItem(key);
+      });
+
+      await supabase.auth.signOut();
+      showAuth();
+    } catch (err) {
+      console.error("Account deletion error:", err);
+      alert("Failed to delete account: " + (err.message || "Unknown error. Please try again."));
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
   // PROFILE / MACRO CALCULATOR
   // ══════════════════════════════════════════════════════════
 
-  function loadProfile() {
-    try {
-      const saved = localStorage.getItem("macrocore_profile");
-      if (saved) return { ...DEFAULT_PROFILE, ...JSON.parse(saved) };
-    } catch (_) { /* ignore */ }
+  function loadProfileFromCache() {
+    const cached = cacheGet("profile");
+    if (cached) return { ...DEFAULT_PROFILE, ...cached };
     return { ...DEFAULT_PROFILE };
   }
 
   function saveProfile() {
-    localStorage.setItem("macrocore_profile", JSON.stringify(profile));
+    cacheSet("profile", profile);
+    syncProfileToSupabase();
   }
 
   function updateProfile(updates) {
@@ -133,30 +282,372 @@
     saveProfile();
   }
 
+  async function syncProfileToSupabase() {
+    if (!currentUser) return;
+    try {
+      await supabase.from("profiles").upsert({
+        id: currentUser.id,
+        name: profile.name,
+        age: profile.age,
+        sex: profile.sex,
+        height_ft: profile.heightFt,
+        height_in: profile.heightIn,
+        weight: profile.weight,
+        activity_level: profile.activityLevel,
+        goal: profile.goal,
+        rate: profile.rate,
+        calories: profile.calories,
+        protein: profile.protein,
+        carbs: profile.carbs,
+        fats: profile.fats,
+        units: profile.units,
+        reminder_enabled: profile.reminderEnabled,
+        reminder_time: profile.reminderTime,
+        onboarded: profile.onboarded,
+        exclusions: profile.exclusions || [],
+        updated_at: new Date().toISOString(),
+      });
+    } catch (_) { /* silent */ }
+  }
+
+  async function loadProfileFromSupabase() {
+    if (!currentUser) return;
+    try {
+      const { data } = await supabase.from("profiles").select("*").eq("id", currentUser.id).single();
+      if (data) {
+        profile = {
+          ...DEFAULT_PROFILE,
+          name: data.name || "",
+          age: data.age || 30,
+          sex: data.sex || "male",
+          heightFt: data.height_ft || 5,
+          heightIn: data.height_in || 10,
+          weight: data.weight || 180,
+          activityLevel: data.activity_level || "moderate",
+          goal: data.goal || "lose",
+          rate: data.rate || 1,
+          calories: data.calories || 2200,
+          protein: data.protein || 165,
+          carbs: data.carbs || 220,
+          fats: data.fats || 73,
+          units: data.units || "imperial",
+          reminderEnabled: data.reminder_enabled !== false,
+          reminderTime: data.reminder_time || "12:00",
+          onboarded: data.onboarded || false,
+          exclusions: data.exclusions || [],
+        };
+        cacheSet("profile", profile);
+      }
+    } catch (_) { /* use cached */ }
+  }
+
   function calculateMacros(p) {
-    const { age, sex, heightFt, heightIn, weight, activityLevel, goal, rate } = p;
-    const heightCm = (heightFt * 12 + heightIn) * 2.54;
-    const weightKg = weight * 0.453592;
-    let bmr;
+    var age = p.age, sex = p.sex, heightFt = p.heightFt, heightIn = p.heightIn, weight = p.weight, activityLevel = p.activityLevel, goal = p.goal, rate = p.rate;
+    var heightCm = (heightFt * 12 + heightIn) * 2.54;
+    var weightKg = weight * 0.453592;
+    var bmr;
     if (sex === "male") {
       bmr = 10 * weightKg + 6.25 * heightCm - 5 * age + 5;
     } else {
       bmr = 10 * weightKg + 6.25 * heightCm - 5 * age - 161;
     }
-    const multipliers = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
-    let tdee = bmr * multipliers[activityLevel];
+    var multipliers = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, very_active: 1.9 };
+    var tdee = bmr * multipliers[activityLevel];
     if (goal === "lose") tdee -= rate * 500;
     else if (goal === "gain") tdee += rate * 250;
-    const calories = Math.round(Math.max(tdee, 1200));
-    const protein = Math.round(Math.max(weightKg * 2.0, 50));
-    const fats = Math.round(Math.max((calories * 0.25) / 9, 30));
-    const carbs = Math.round(Math.max((calories - protein * 4 - fats * 9) / 4, 50));
-    return { calories, protein, carbs, fats };
+    var calories = Math.round(Math.max(tdee, 1200));
+    var protein = Math.round(Math.max(weightKg * 2.0, 50));
+    var fats = Math.round(Math.max((calories * 0.25) / 9, 30));
+    var carbs = Math.round(Math.max((calories - protein * 4 - fats * 9) / 4, 50));
+    return { calories: calories, protein: protein, carbs: carbs, fats: fats };
   }
 
   function recalculate() {
-    const macros = calculateMacros(profile);
+    var oldMacros = { calories: profile.calories, protein: profile.protein, carbs: profile.carbs, fats: profile.fats };
+    var macros = calculateMacros(profile);
     updateProfile(macros);
+
+    // Record adjustment if macros changed
+    if (oldMacros.calories !== macros.calories || oldMacros.protein !== macros.protein) {
+      addAdjustment(oldMacros, macros, "Manual recalculation from settings");
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // FOOD ENTRIES PERSISTENCE
+  // ══════════════════════════════════════════════════════════
+
+  function cacheFoodEntries() {
+    cacheSet("food_" + todayStr(), foodEntries);
+  }
+
+  function loadFoodEntriesFromCache() {
+    var cached = cacheGet("food_" + todayStr());
+    foodEntries = cached || [];
+  }
+
+  async function syncFoodEntriesToSupabase() {
+    if (!currentUser) return;
+    try {
+      // Delete today's entries and re-insert all
+      var today = todayStr();
+      await supabase.from("food_entries").delete().eq("user_id", currentUser.id).eq("logged_at", today);
+      if (foodEntries.length > 0) {
+        await supabase.from("food_entries").insert(
+          foodEntries.map(function (e) {
+            return {
+              id: e.id,
+              user_id: currentUser.id,
+              name: e.name,
+              calories: e.calories,
+              protein: e.protein,
+              carbs: e.carbs,
+              fats: e.fats,
+              meal: e.meal,
+              logged_at: today,
+            };
+          })
+        );
+      }
+    } catch (_) { /* silent */ }
+  }
+
+  async function loadFoodEntriesFromSupabase() {
+    if (!currentUser) return;
+    try {
+      var today = todayStr();
+      var { data } = await supabase.from("food_entries")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .eq("logged_at", today)
+        .order("created_at", { ascending: true });
+      if (data && data.length > 0) {
+        foodEntries = data.map(function (row) {
+          return {
+            id: row.id,
+            name: row.name,
+            calories: row.calories,
+            protein: row.protein,
+            carbs: row.carbs,
+            fats: row.fats,
+            meal: row.meal,
+          };
+        });
+        cacheFoodEntries();
+      }
+    } catch (_) { /* use cached */ }
+  }
+
+  function addFoodEntry(food, meal) {
+    var entry = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString() + Math.random().toString(36).slice(2),
+      name: food.name,
+      calories: food.calories,
+      protein: food.protein,
+      carbs: food.carbs,
+      fats: food.fats,
+      meal: meal,
+    };
+    foodEntries.push(entry);
+    cacheFoodEntries();
+    syncFoodEntriesToSupabase();
+    return entry;
+  }
+
+  function deleteFoodEntry(id) {
+    foodEntries = foodEntries.filter(function (e) { return e.id !== id; });
+    cacheFoodEntries();
+    syncFoodEntriesToSupabase();
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // WEIGHT LOG PERSISTENCE
+  // ══════════════════════════════════════════════════════════
+
+  function cacheWeightLogs() {
+    cacheSet("weights", weightLogs);
+  }
+
+  function loadWeightLogsFromCache() {
+    var cached = cacheGet("weights");
+    weightLogs = cached || [];
+  }
+
+  async function syncWeightLogToSupabase(entry) {
+    if (!currentUser) return;
+    try {
+      // Upsert by date
+      await supabase.from("weight_logs").upsert({
+        id: entry.id,
+        user_id: currentUser.id,
+        weight: entry.weight,
+        logged_at: entry.date,
+      });
+    } catch (_) { /* silent */ }
+  }
+
+  async function loadWeightLogsFromSupabase() {
+    if (!currentUser) return;
+    try {
+      var { data } = await supabase.from("weight_logs")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .order("logged_at", { ascending: true });
+      if (data && data.length > 0) {
+        weightLogs = data.map(function (row) {
+          return { id: row.id, date: row.logged_at, weight: row.weight };
+        });
+        cacheWeightLogs();
+      }
+    } catch (_) { /* use cached */ }
+  }
+
+  function logWeight(weight) {
+    var today = todayStr();
+    var existing = weightLogs.find(function (w) { return w.date === today; });
+    if (existing) {
+      existing.weight = weight;
+    } else {
+      var entry = {
+        id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+        date: today,
+        weight: weight,
+      };
+      weightLogs.push(entry);
+    }
+    cacheWeightLogs();
+    var toSync = weightLogs.find(function (w) { return w.date === today; });
+    syncWeightLogToSupabase(toSync);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // MEAL PLAN PERSISTENCE
+  // ══════════════════════════════════════════════════════════
+
+  function cacheMealPlan() {
+    cacheSet("meal_plan", { meals: mealPlanMeals, id: savedMealPlanId });
+  }
+
+  function loadMealPlanFromCache() {
+    var cached = cacheGet("meal_plan");
+    if (cached) {
+      mealPlanMeals = cached.meals || [];
+      savedMealPlanId = cached.id || null;
+    }
+  }
+
+  async function saveMealPlanToSupabase(prefs) {
+    if (!currentUser) return;
+    try {
+      var payload = {
+        user_id: currentUser.id,
+        preferences: prefs || "",
+        meals: mealPlanMeals,
+      };
+      if (savedMealPlanId) {
+        await supabase.from("meal_plans").update(payload).eq("id", savedMealPlanId);
+      } else {
+        var { data } = await supabase.from("meal_plans").insert(payload).select("id").single();
+        if (data) savedMealPlanId = data.id;
+      }
+      cacheMealPlan();
+    } catch (_) { /* silent */ }
+  }
+
+  async function loadMealPlanFromSupabase() {
+    if (!currentUser) return;
+    try {
+      var { data } = await supabase.from("meal_plans")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .single();
+      if (data) {
+        mealPlanMeals = data.meals || [];
+        savedMealPlanId = data.id;
+        cacheMealPlan();
+      }
+    } catch (_) { /* use cached */ }
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // ADJUSTMENT HISTORY PERSISTENCE
+  // ══════════════════════════════════════════════════════════
+
+  function cacheAdjustments() {
+    cacheSet("adjustments", adjustments);
+  }
+
+  function loadAdjustmentsFromCache() {
+    var cached = cacheGet("adjustments");
+    adjustments = cached || [];
+  }
+
+  function addAdjustment(oldMacros, newMacros, reason) {
+    var adj = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
+      created_at: new Date().toISOString(),
+      prev_calories: oldMacros.calories,
+      new_calories: newMacros.calories,
+      prev_protein: oldMacros.protein,
+      new_protein: newMacros.protein,
+      prev_carbs: oldMacros.carbs,
+      new_carbs: newMacros.carbs,
+      prev_fats: oldMacros.fats,
+      new_fats: newMacros.fats,
+      reason: reason,
+    };
+    adjustments.push(adj);
+    cacheAdjustments();
+    syncAdjustmentToSupabase(adj);
+  }
+
+  async function syncAdjustmentToSupabase(adj) {
+    if (!currentUser) return;
+    try {
+      await supabase.from("adjustments").insert({
+        id: adj.id,
+        user_id: currentUser.id,
+        prev_calories: adj.prev_calories,
+        new_calories: adj.new_calories,
+        prev_protein: adj.prev_protein,
+        new_protein: adj.new_protein,
+        prev_carbs: adj.prev_carbs,
+        new_carbs: adj.new_carbs,
+        prev_fats: adj.prev_fats,
+        new_fats: adj.new_fats,
+        reason: adj.reason,
+      });
+    } catch (_) { /* silent */ }
+  }
+
+  async function loadAdjustmentsFromSupabase() {
+    if (!currentUser) return;
+    try {
+      var { data } = await supabase.from("adjustments")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .order("created_at", { ascending: true });
+      if (data && data.length > 0) {
+        adjustments = data.map(function (row) {
+          return {
+            id: row.id,
+            created_at: row.created_at,
+            prev_calories: row.prev_calories,
+            new_calories: row.new_calories,
+            prev_protein: row.prev_protein,
+            new_protein: row.new_protein,
+            prev_carbs: row.prev_carbs,
+            new_carbs: row.new_carbs,
+            prev_fats: row.prev_fats,
+            new_fats: row.new_fats,
+            reason: row.reason,
+          };
+        });
+        cacheAdjustments();
+      }
+    } catch (_) { /* use cached */ }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -176,7 +667,7 @@
   // ROUTER
   // ══════════════════════════════════════════════════════════
 
-  const PAGES = ["home", "meals", "progress", "goals", "settings"];
+  var PAGES = ["home", "meals", "progress", "goals", "settings"];
 
   function navigate(page) {
     if (!PAGES.includes(page)) page = "home";
@@ -184,19 +675,18 @@
   }
 
   function handleRoute() {
-    const hash = window.location.hash.slice(1) || "home";
-    const page = PAGES.includes(hash) ? hash : "home";
+    var hash = window.location.hash.slice(1) || "home";
+    var page = PAGES.includes(hash) ? hash : "home";
 
-    PAGES.forEach((p) => {
-      const el = document.getElementById("page-" + p);
+    PAGES.forEach(function (p) {
+      var el = document.getElementById("page-" + p);
       if (el) el.classList.toggle("active", p === page);
     });
 
-    document.querySelectorAll(".nav-item").forEach((btn) => {
+    document.querySelectorAll(".nav-item").forEach(function (btn) {
       btn.classList.toggle("active", btn.dataset.page === page);
     });
 
-    // Refresh page-specific content
     if (page === "home") renderHome();
     if (page === "meals") renderMeals();
     if (page === "progress") renderProgress();
@@ -208,11 +698,11 @@
   // ONBOARDING
   // ══════════════════════════════════════════════════════════
 
-  const OB_STEPS = ["welcome", "basics", "body", "activity", "goal", "results"];
-  let obStep = 0;
+  var OB_STEPS = ["welcome", "basics", "body", "activity", "goal", "results"];
+  var obStep = 0;
 
   function showOnboarding() {
-    const el = document.getElementById("onboarding");
+    var el = document.getElementById("onboarding");
     el.style.display = "flex";
     el.classList.remove("hidden");
     document.getElementById("bottom-nav").style.display = "none";
@@ -221,34 +711,31 @@
   }
 
   function hideOnboarding() {
-    const el = document.getElementById("onboarding");
+    var el = document.getElementById("onboarding");
     el.classList.add("hidden");
-    setTimeout(() => { el.style.display = "none"; }, 300);
+    setTimeout(function () { el.style.display = "none"; }, 300);
     document.getElementById("bottom-nav").style.display = "";
     handleRoute();
   }
 
   function renderObStep() {
-    const stepName = OB_STEPS[obStep];
-    const progBar = document.getElementById("onboarding-progress");
+    var stepName = OB_STEPS[obStep];
+    var progBar = document.getElementById("onboarding-progress");
     progBar.style.display = stepName === "welcome" ? "none" : "flex";
 
-    // Fill progress segments
-    for (let i = 1; i <= 5; i++) {
+    for (var i = 1; i <= 5; i++) {
       document.getElementById("prog-" + i).classList.toggle("filled", i <= obStep);
     }
 
-    // Show/hide steps
-    OB_STEPS.forEach((s) => {
-      const stepEl = document.getElementById("step-" + s);
+    OB_STEPS.forEach(function (s) {
+      var stepEl = document.getElementById("step-" + s);
       if (stepEl) stepEl.classList.toggle("active", s === stepName);
     });
 
-    // Sync form values
     if (stepName === "basics") {
       document.getElementById("ob-name").value = profile.name;
       document.getElementById("ob-age").value = profile.age;
-      document.querySelectorAll(".sex-btn").forEach((b) => b.classList.toggle("selected", b.dataset.sex === profile.sex));
+      document.querySelectorAll(".sex-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.sex === profile.sex); });
       updateBasicsBtn();
     }
     if (stepName === "body") {
@@ -257,19 +744,19 @@
       document.getElementById("ob-weight").value = profile.weight;
     }
     if (stepName === "activity") {
-      document.querySelectorAll("#activity-options .selection-btn").forEach((b) => {
+      document.querySelectorAll("#activity-options .selection-btn").forEach(function (b) {
         b.classList.toggle("selected", b.dataset.activity === profile.activityLevel);
       });
     }
     if (stepName === "goal") {
-      document.querySelectorAll("#goal-options .selection-btn").forEach((b) => {
+      document.querySelectorAll("#goal-options .selection-btn").forEach(function (b) {
         b.classList.toggle("selected", b.dataset.goal === profile.goal);
       });
-      document.querySelectorAll(".rate-btn").forEach((b) => {
+      document.querySelectorAll(".rate-btn").forEach(function (b) {
         b.classList.toggle("selected", parseFloat(b.dataset.rate) === profile.rate);
       });
       document.getElementById("rate-display").textContent = profile.rate;
-      const rateSection = document.getElementById("rate-section");
+      var rateSection = document.getElementById("rate-section");
       rateSection.style.display = profile.goal === "maintain" ? "none" : "";
       document.getElementById("rate-hint").textContent =
         profile.goal === "lose"
@@ -277,7 +764,7 @@
           : "0.5-1 lb/week is ideal for lean gains";
     }
     if (stepName === "results") {
-      const m = calculateMacros(profile);
+      var m = calculateMacros(profile);
       document.getElementById("result-calories").textContent = m.calories;
       document.getElementById("result-protein").textContent = m.protein + "g";
       document.getElementById("result-carbs").textContent = m.carbs + "g";
@@ -300,7 +787,7 @@
   }
 
   function updateBasicsBtn() {
-    const name = document.getElementById("ob-name").value.trim();
+    var name = document.getElementById("ob-name").value.trim();
     document.getElementById("btn-basics-next").disabled = !name;
   }
 
@@ -316,54 +803,53 @@
   }
 
   function updateGreeting() {
-    const h = new Date().getHours();
-    let g = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+    var h = new Date().getHours();
+    var g = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
     if (profile.name) g += ", " + profile.name;
     document.getElementById("greeting-text").textContent = g;
   }
 
   function getTotals() {
     return foodEntries.reduce(
-      (acc, e) => ({
-        calories: acc.calories + e.calories,
-        protein: acc.protein + e.protein,
-        carbs: acc.carbs + e.carbs,
-        fats: acc.fats + e.fats,
-      }),
+      function (acc, e) {
+        return {
+          calories: acc.calories + e.calories,
+          protein: acc.protein + e.protein,
+          carbs: acc.carbs + e.carbs,
+          fats: acc.fats + e.fats,
+        };
+      },
       { calories: 0, protein: 0, carbs: 0, fats: 0 }
     );
   }
 
   function updateCalorieRing() {
-    const totals = getTotals();
-    const current = Math.round(totals.calories);
-    const target = profile.calories;
-    const pct = Math.min((current / target) * 100, 100);
-    const circumference = 2 * Math.PI * 45; // ~282.74
-    const offset = circumference - (pct / 100) * circumference;
+    var totals = getTotals();
+    var current = Math.round(totals.calories);
+    var target = profile.calories;
+    var pct = Math.min((current / target) * 100, 100);
+    var circumference = 2 * Math.PI * 45;
+    var offset = circumference - (pct / 100) * circumference;
 
     document.getElementById("calorie-ring-circle").setAttribute("stroke-dashoffset", offset);
     document.getElementById("ring-current").textContent = current.toLocaleString();
     document.getElementById("ring-target").textContent = "of " + target.toLocaleString() + " cal";
 
-    const remaining = target - current;
+    var remaining = target - current;
     document.getElementById("ring-remaining").textContent =
       remaining > 0 ? remaining + " cal remaining" : "Goal reached! 🎉";
 
-    // Macro targets
     document.getElementById("macro-p-tar").textContent = profile.protein;
     document.getElementById("macro-c-tar").textContent = profile.carbs;
     document.getElementById("macro-f-tar").textContent = profile.fats;
 
-    // Macro current
     document.getElementById("macro-p-cur").textContent = Math.round(totals.protein);
     document.getElementById("macro-c-cur").textContent = Math.round(totals.carbs);
     document.getElementById("macro-f-cur").textContent = Math.round(totals.fats);
 
-    // Bars
-    const pP = Math.min((totals.protein / profile.protein) * 100, 100);
-    const pC = Math.min((totals.carbs / profile.carbs) * 100, 100);
-    const pF = Math.min((totals.fats / profile.fats) * 100, 100);
+    var pP = Math.min((totals.protein / profile.protein) * 100, 100);
+    var pC = Math.min((totals.carbs / profile.carbs) * 100, 100);
+    var pF = Math.min((totals.fats / profile.fats) * 100, 100);
     document.getElementById("macro-p-bar").style.width = pP + "%";
     document.getElementById("macro-c-bar").style.width = pC + "%";
     document.getElementById("macro-f-bar").style.width = pF + "%";
@@ -378,18 +864,39 @@
   // ── Weekly Chart (SVG) ───────────────────────────────────
 
   function renderWeeklyChart() {
-    const container = document.getElementById("weekly-chart");
-    const data = WEIGHT_DATA;
-    const weeklyChange = data[data.length - 1].weight - data[0].weight;
-    const avgWeight = (data.reduce((s, d) => s + d.weight, 0) / data.length).toFixed(1);
+    var container = document.getElementById("weekly-chart");
+
+    // Use last 7 weight logs, or show placeholder
+    var data;
+    if (weightLogs.length >= 2) {
+      var last7 = weightLogs.slice(-7);
+      data = last7.map(function (w) {
+        var d = new Date(w.date + "T12:00:00");
+        var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        return { day: days[d.getDay()], weight: w.weight };
+      });
+    } else {
+      // Show placeholder message
+      data = [
+        { day: "Mon", weight: profile.weight },
+        { day: "Tue", weight: profile.weight },
+      ];
+    }
+
+    var weeklyChange = data[data.length - 1].weight - data[0].weight;
+    var avgWeight = (data.reduce(function (s, d) { return s + d.weight; }, 0) / data.length).toFixed(1);
 
     document.getElementById("weekly-avg").textContent = avgWeight;
 
-    const badge = document.getElementById("weekly-trend-badge");
-    const trendIcon = document.getElementById("trend-icon");
-    const trendLabel = document.getElementById("trend-label");
+    var badge = document.getElementById("weekly-trend-badge");
+    var trendIcon = document.getElementById("trend-icon");
+    var trendLabel = document.getElementById("trend-label");
 
-    if (weeklyChange < -0.3) {
+    if (weightLogs.length < 2) {
+      badge.className = "trend-badge muted";
+      trendIcon.innerHTML = '<path d="M5 12h14"/>';
+      trendLabel.textContent = "Log weight";
+    } else if (weeklyChange < -0.3) {
       badge.className = "trend-badge success";
       trendIcon.innerHTML = '<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>';
       trendLabel.textContent = "On track";
@@ -403,13 +910,17 @@
       trendLabel.textContent = "Maintaining";
     }
 
-    drawLineChart(container, data, "day", "weight", " lbs");
+    if (weightLogs.length >= 2) {
+      drawLineChart(container, data, "day", "weight", " lbs");
+    } else {
+      container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:hsl(var(--muted-foreground));font-size:0.875rem">Log your weight on the Progress page to see trends</div>';
+    }
   }
 
   // ── Today Log ────────────────────────────────────────────
 
   function renderTodayLog() {
-    const el = document.getElementById("today-log");
+    var el = document.getElementById("today-log");
 
     if (foodEntries.length === 0) {
       el.innerHTML =
@@ -421,23 +932,26 @@
       return;
     }
 
-    const grouped = {};
-    foodEntries.forEach((e) => {
+    var grouped = {};
+    foodEntries.forEach(function (e) {
       if (!grouped[e.meal]) grouped[e.meal] = [];
       grouped[e.meal].push(e);
     });
 
-    let html = "";
-    for (const [meal, items] of Object.entries(grouped)) {
-      const pTotal = items.reduce((s, e) => s + e.protein, 0);
-      const cTotal = items.reduce((s, e) => s + e.carbs, 0);
-      const fTotal = items.reduce((s, e) => s + e.fats, 0);
+    var html = "";
+    for (var meal in grouped) {
+      if (!grouped.hasOwnProperty(meal)) continue;
+      var items = grouped[meal];
+      var pTotal = items.reduce(function (s, e) { return s + e.protein; }, 0);
+      var cTotal = items.reduce(function (s, e) { return s + e.carbs; }, 0);
+      var fTotal = items.reduce(function (s, e) { return s + e.fats; }, 0);
       html += '<div class="meal-group">';
       html += '<p class="meal-group-label">' + (MEAL_LABELS[meal] || meal) + "</p>";
-      items.forEach((entry) => {
+      items.forEach(function (entry) {
         html +=
           '<div class="meal-entry">' +
           '<span class="food-name">' + esc(entry.name) + "</span>" +
+          '<button class="btn-link" data-delete-food="' + entry.id + '" style="font-size:0.75rem;color:hsl(var(--destructive))">remove</button>' +
           '<span class="food-cal font-display">' + entry.calories + " cal</span>" +
           "</div>";
       });
@@ -449,6 +963,16 @@
         "</div></div>";
     }
     el.innerHTML = html;
+
+    // Bind delete buttons
+    el.querySelectorAll("[data-delete-food]").forEach(function (btn) {
+      btn.addEventListener("click", function (e) {
+        e.stopPropagation();
+        deleteFoodEntry(btn.getAttribute("data-delete-food"));
+        updateCalorieRing();
+        renderTodayLog();
+      });
+    });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -471,19 +995,12 @@
   }
 
   function renderMealChips() {
-    const el = document.getElementById("meal-chips");
-    el.innerHTML = MEALS.map(
-      (m) =>
-        '<button class="chip' +
-        (selectedMeal === m.id ? " active" : "") +
-        '" data-meal="' +
-        m.id +
-        '">' +
-        m.label +
-        "</button>"
-    ).join("");
-    el.querySelectorAll(".chip").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    var el = document.getElementById("meal-chips");
+    el.innerHTML = MEALS.map(function (m) {
+      return '<button class="chip' + (selectedMeal === m.id ? " active" : "") + '" data-meal="' + m.id + '">' + m.label + "</button>";
+    }).join("");
+    el.querySelectorAll(".chip").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         selectedMeal = btn.dataset.meal;
         renderMealChips();
       });
@@ -491,14 +1008,13 @@
   }
 
   function renderFoodList(filter) {
-    const el = document.getElementById("food-list");
-    const query = (filter || "").toLowerCase();
-    const filtered = QUICK_FOODS.filter((f) => f.name.toLowerCase().includes(query));
+    var el = document.getElementById("food-list");
+    var query = (filter || "").toLowerCase();
+    var filtered = QUICK_FOODS.filter(function (f) { return f.name.toLowerCase().includes(query); });
 
     el.innerHTML = filtered
-      .map(
-        (f) =>
-          '<button class="quick-food-item" data-food="' + esc(f.name) + '">' +
+      .map(function (f) {
+        return '<button class="quick-food-item" data-food="' + esc(f.name) + '">' +
           '<span class="food-emoji">' + f.emoji + "</span>" +
           '<div class="food-info">' +
           '<p class="name">' + esc(f.name) + "</p>" +
@@ -507,23 +1023,15 @@
           '<div class="food-cal-info">' +
           '<p class="cal-num font-display">' + f.calories + "</p>" +
           '<p class="cal-label">cal</p>' +
-          "</div></button>"
-      )
+          "</div></button>";
+      })
       .join("");
 
-    el.querySelectorAll(".quick-food-item").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const food = QUICK_FOODS.find((f) => f.name === btn.dataset.food);
+    el.querySelectorAll(".quick-food-item").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var food = QUICK_FOODS.find(function (f) { return f.name === btn.dataset.food; });
         if (!food) return;
-        foodEntries.push({
-          id: Date.now().toString(),
-          name: food.name,
-          calories: food.calories,
-          protein: food.protein,
-          carbs: food.carbs,
-          fats: food.fats,
-          meal: selectedMeal,
-        });
+        addFoodEntry(food, selectedMeal);
         updateCalorieRing();
         renderTodayLog();
         closeQuickLog();
@@ -538,11 +1046,50 @@
   function renderMeals() {
     document.getElementById("meals-macro-summary").textContent =
       profile.calories + " cal · " + profile.protein + "g P · " + profile.carbs + "g C · " + profile.fats + "g F";
+    renderExclusionTags();
     renderMealPlanOutput();
   }
 
+  function renderExclusionTags() {
+    var el = document.getElementById("exclusion-tags");
+    if (!el) return;
+    var exclusions = profile.exclusions || [];
+    el.innerHTML = exclusions.map(function (item) {
+      return '<span class="exclusion-tag">' + esc(item) +
+        '<button data-remove-exclusion="' + esc(item) + '">' +
+        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>' +
+        '</button></span>';
+    }).join("");
+
+    el.querySelectorAll("[data-remove-exclusion]").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var toRemove = btn.getAttribute("data-remove-exclusion");
+        var updated = (profile.exclusions || []).filter(function (e) { return e !== toRemove; });
+        updateProfile({ exclusions: updated });
+        renderExclusionTags();
+      });
+    });
+  }
+
+  function addExclusion() {
+    var input = document.getElementById("exclusion-input");
+    var val = input.value.trim();
+    if (!val) return;
+    var exclusions = profile.exclusions || [];
+    // Avoid duplicates (case-insensitive)
+    var lower = val.toLowerCase();
+    if (exclusions.some(function (e) { return e.toLowerCase() === lower; })) {
+      input.value = "";
+      return;
+    }
+    exclusions.push(val);
+    updateProfile({ exclusions: exclusions });
+    input.value = "";
+    renderExclusionTags();
+  }
+
   function renderMealPlanOutput() {
-    const el = document.getElementById("meal-plan-output");
+    var el = document.getElementById("meal-plan-output");
 
     if (mealPlanLoading) {
       el.innerHTML =
@@ -560,17 +1107,19 @@
       return;
     }
 
-    const totals = mealPlanMeals.reduce(
-      (acc, m) => ({
-        calories: acc.calories + m.calories,
-        protein: acc.protein + m.protein,
-        carbs: acc.carbs + m.carbs,
-        fats: acc.fats + m.fats,
-      }),
+    var totals = mealPlanMeals.reduce(
+      function (acc, m) {
+        return {
+          calories: acc.calories + m.calories,
+          protein: acc.protein + m.protein,
+          carbs: acc.carbs + m.carbs,
+          fats: acc.fats + m.fats,
+        };
+      },
       { calories: 0, protein: 0, carbs: 0, fats: 0 }
     );
 
-    let html =
+    var html =
       '<div class="daily-total-card">' +
       '<span class="dt-label">Daily Total</span>' +
       '<div class="dt-macros">' +
@@ -580,7 +1129,7 @@
       '<span class="f">' + Math.round(totals.fats) + "g F</span>" +
       "</div></div>";
 
-    mealPlanMeals.forEach((meal, i) => {
+    mealPlanMeals.forEach(function (meal, i) {
       html +=
         '<div class="meal-plan-card" style="animation:fadeInUp 0.3s ease ' + (i * 0.05) + 's both">' +
         '<button class="meal-plan-header" data-meal-idx="' + i + '">' +
@@ -602,26 +1151,20 @@
         '<div class="meal-plan-body-inner">' +
         '<p class="ingredients-label">Ingredients</p>' +
         (meal.ingredients || [])
-          .map(
-            (ing) =>
-              '<div class="ingredient-item"><span class="ing-name">' +
-              esc(ing.name) +
-              '</span><span class="ing-amount">' +
-              esc(ing.amount) +
-              "</span></div>"
-          )
+          .map(function (ing) {
+            return '<div class="ingredient-item"><span class="ing-name">' + esc(ing.name) + '</span><span class="ing-amount">' + esc(ing.amount) + "</span></div>";
+          })
           .join("") +
         "</div></div></div>";
     });
 
     el.innerHTML = html;
 
-    // Toggle expand
-    el.querySelectorAll(".meal-plan-header").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const idx = btn.dataset.mealIdx;
-        const body = document.getElementById("mpb-" + idx);
-        const icon = btn.querySelector(".expand-icon");
+    el.querySelectorAll(".meal-plan-header").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var idx = btn.dataset.mealIdx;
+        var body = document.getElementById("mpb-" + idx);
+        var icon = btn.querySelector(".expand-icon");
         body.classList.toggle("open");
         icon.classList.toggle("open");
       });
@@ -632,35 +1175,40 @@
     if (mealPlanLoading) return;
     mealPlanLoading = true;
     mealPlanMeals = [];
+    savedMealPlanId = null;
     renderMealPlanOutput();
 
     try {
-      const prefs = document.getElementById("meal-preferences").value.trim();
-      const res = await fetch(SUPABASE_URL + "/functions/v1/generate-meal-plan", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: SUPABASE_KEY,
-          Authorization: "Bearer " + SUPABASE_KEY,
-        },
-        body: JSON.stringify({
+      var prefs = document.getElementById("meal-preferences").value.trim();
+      var exclusions = profile.exclusions || [];
+      // Build combined preferences string including exclusions
+      var fullPrefs = prefs || "";
+      if (exclusions.length > 0) {
+        var excludeStr = "MUST NOT include these foods (allergies/dislikes): " + exclusions.join(", ");
+        fullPrefs = fullPrefs ? fullPrefs + ". " + excludeStr : excludeStr;
+      }
+      var { data, error } = await supabase.functions.invoke("generate-meal-plan", {
+        body: {
           calories: profile.calories,
           protein: profile.protein,
           carbs: profile.carbs,
           fats: profile.fats,
-          preferences: prefs || undefined,
-        }),
+          preferences: fullPrefs || undefined,
+        },
       });
 
-      const data = await res.json();
+      if (error) throw error;
       if (data.error) throw new Error(data.error);
 
-      mealPlanMeals = (data.meals || []).sort(
-        (a, b) => MEAL_PLAN_ORDER.indexOf(a.meal_type) - MEAL_PLAN_ORDER.indexOf(b.meal_type)
-      );
+      mealPlanMeals = (data.meals || []).sort(function (a, b) {
+        return MEAL_PLAN_ORDER.indexOf(a.meal_type) - MEAL_PLAN_ORDER.indexOf(b.meal_type);
+      });
+
+      cacheMealPlan();
+      saveMealPlanToSupabase(prefs);
     } catch (e) {
       console.error(e);
-      const el = document.getElementById("meal-plan-output");
+      var el = document.getElementById("meal-plan-output");
       el.innerHTML =
         '<div class="card" style="text-align:center;padding:2rem">' +
         '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--destructive))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 0.5rem"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>' +
@@ -677,37 +1225,115 @@
   // ══════════════════════════════════════════════════════════
 
   function renderProgress() {
-    const totalLost = WEEKLY_WEIGHTS[0].avg - WEEKLY_WEIGHTS[WEEKLY_WEIGHTS.length - 1].avg;
+    // Calculate stats from real data
+    var totalLost = 0;
+    var streak = 0;
+    var durationWeeks = 0;
 
-    const statsEl = document.getElementById("progress-stats");
+    if (weightLogs.length >= 2) {
+      totalLost = weightLogs[0].weight - weightLogs[weightLogs.length - 1].weight;
+      // Calculate duration in weeks
+      var firstDate = new Date(weightLogs[0].date);
+      var lastDate = new Date(weightLogs[weightLogs.length - 1].date);
+      durationWeeks = Math.max(1, Math.round((lastDate - firstDate) / (7 * 24 * 60 * 60 * 1000)));
+    }
+
+    // Calculate streak from food entries (count consecutive days with entries going backwards)
+    streak = foodEntries.length > 0 ? 1 : 0;
+    // Simple: just check if we have today's entries
+    var today = todayStr();
+    if (foodEntries.length > 0) {
+      streak = 1; // At least today
+    }
+
+    var statsEl = document.getElementById("progress-stats");
     statsEl.innerHTML = [
       {
         icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--success))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>',
-        value: totalLost.toFixed(1) + " lbs",
+        value: totalLost > 0 ? totalLost.toFixed(1) + " lbs" : "--",
         label: "Lost",
       },
       {
         icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--accent))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></svg>',
-        value: "12 days",
+        value: streak > 0 ? streak + " day" + (streak > 1 ? "s" : "") : "--",
         label: "Streak",
       },
       {
         icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--primary))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>',
-        value: "4 weeks",
+        value: durationWeeks > 0 ? durationWeeks + " week" + (durationWeeks > 1 ? "s" : "") : "--",
         label: "Duration",
       },
     ]
-      .map(
-        (s) =>
-          '<div class="stat-card animate-in animate-delay-1">' +
-          s.icon +
-          '<p class="stat-value font-display">' + s.value + "</p>" +
-          '<p class="stat-label">' + s.label + "</p></div>"
-      )
+      .map(function (s) {
+        return '<div class="stat-card animate-in animate-delay-1">' + s.icon + '<p class="stat-value font-display">' + s.value + "</p>" + '<p class="stat-label">' + s.label + "</p></div>";
+      })
       .join("");
 
-    drawLineChart(document.getElementById("weight-trend-chart"), WEEKLY_WEIGHTS, "week", "avg", " lbs");
-    drawBarChart(document.getElementById("adherence-chart"), ADHERENCE_DATA, "day", "pct", "%");
+    // Weight trend chart
+    if (weightLogs.length >= 2) {
+      // Group by week for the trend chart
+      var weeklyData = getWeeklyAverages();
+      drawLineChart(document.getElementById("weight-trend-chart"), weeklyData, "week", "avg", " lbs");
+    } else {
+      document.getElementById("weight-trend-chart").innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:hsl(var(--muted-foreground));font-size:0.875rem">Log at least 2 weights to see trends</div>';
+    }
+
+    // Adherence chart — compute from food entries (last 7 days)
+    var adherenceData = computeAdherence();
+    if (adherenceData.length > 0) {
+      drawBarChart(document.getElementById("adherence-chart"), adherenceData, "day", "pct", "%");
+    } else {
+      document.getElementById("adherence-chart").innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:hsl(var(--muted-foreground));font-size:0.875rem">Log food to see adherence data</div>';
+    }
+
+    // Set today's weight in the log input if already logged
+    var todayLog = weightLogs.find(function (w) { return w.date === todayStr(); });
+    var weightInput = document.getElementById("weight-log-input");
+    if (todayLog && weightInput) {
+      weightInput.value = todayLog.weight;
+      document.getElementById("weight-log-status").textContent = "Updated today at " + todayLog.date;
+    }
+  }
+
+  function getWeeklyAverages() {
+    if (weightLogs.length === 0) return [];
+    // Group into weeks
+    var weeks = [];
+    var sorted = weightLogs.slice().sort(function (a, b) { return a.date.localeCompare(b.date); });
+    var weekNum = 1;
+    var weekEntries = [];
+    var firstDate = new Date(sorted[0].date + "T12:00:00");
+
+    sorted.forEach(function (w) {
+      var d = new Date(w.date + "T12:00:00");
+      var daysSinceStart = Math.floor((d - firstDate) / (24 * 60 * 60 * 1000));
+      var currentWeek = Math.floor(daysSinceStart / 7) + 1;
+      if (currentWeek !== weekNum) {
+        if (weekEntries.length > 0) {
+          var avg = weekEntries.reduce(function (s, e) { return s + e; }, 0) / weekEntries.length;
+          weeks.push({ week: "W" + weekNum, avg: parseFloat(avg.toFixed(1)) });
+        }
+        weekNum = currentWeek;
+        weekEntries = [];
+      }
+      weekEntries.push(w.weight);
+    });
+    // Push last week
+    if (weekEntries.length > 0) {
+      var avg = weekEntries.reduce(function (s, e) { return s + e; }, 0) / weekEntries.length;
+      weeks.push({ week: "W" + weekNum, avg: parseFloat(avg.toFixed(1)) });
+    }
+    return weeks;
+  }
+
+  function computeAdherence() {
+    // For today, compute adherence from foodEntries
+    if (foodEntries.length === 0) return [];
+    var totals = getTotals();
+    var pct = Math.round((totals.calories / profile.calories) * 100);
+    return [{ day: "Today", pct: pct }];
   }
 
   // ══════════════════════════════════════════════════════════
@@ -719,6 +1345,46 @@
     document.getElementById("goals-protein").textContent = profile.protein + "g";
     document.getElementById("goals-carbs").textContent = profile.carbs + "g";
     document.getElementById("goals-fats").textContent = profile.fats + "g";
+    renderAdjustmentHistory();
+  }
+
+  function renderAdjustmentHistory() {
+    var el = document.getElementById("adjustment-history");
+    if (!el) return;
+
+    if (adjustments.length === 0) {
+      el.innerHTML = '<p style="font-size:0.875rem;color:hsl(var(--muted-foreground))">No adjustments yet. Your targets will be recorded when you recalculate.</p>';
+      return;
+    }
+
+    var html = "";
+    var reversed = adjustments.slice().reverse();
+    reversed.forEach(function (adj, i) {
+      var date = new Date(adj.created_at);
+      var label = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      var calDiff = adj.new_calories - adj.prev_calories;
+      var changeText;
+      if (calDiff === 0) {
+        changeText = "No calorie change";
+      } else if (calDiff > 0) {
+        changeText = "Calories increased by " + calDiff;
+      } else {
+        changeText = "Calories reduced by " + Math.abs(calDiff);
+      }
+
+      html +=
+        '<div class="adjustment-item">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>' +
+        '<div class="adjustment-info">' +
+        '<div class="adj-header">' +
+        '<span class="adj-week">' + esc(label) + "</span>" +
+        '<svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>' +
+        '<span class="adj-change">' + esc(changeText) + "</span>" +
+        "</div>" +
+        '<p class="adj-reason">' + esc(adj.reason) + "</p>" +
+        "</div></div>";
+    });
+    el.innerHTML = html;
   }
 
   // ══════════════════════════════════════════════════════════
@@ -726,7 +1392,7 @@
   // ══════════════════════════════════════════════════════════
 
   function renderSettings() {
-    const items = [
+    var items = [
       {
         id: "profile",
         icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>',
@@ -743,11 +1409,7 @@
         id: "goal",
         icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>',
         label: "Goal",
-        desc:
-          (profile.goal === "lose" ? "Lose weight" : profile.goal === "gain" ? "Build muscle" : "Maintain") +
-          " · " +
-          profile.rate +
-          " lb/week",
+        desc: (profile.goal === "lose" ? "Lose weight" : profile.goal === "gain" ? "Build muscle" : "Maintain") + " · " + profile.rate + " lb/week",
       },
       {
         id: "reminders",
@@ -769,59 +1431,58 @@
       },
     ];
 
-    const el = document.getElementById("settings-list");
+    var el = document.getElementById("settings-list");
     el.innerHTML =
       items
-        .map(
-          (item) =>
-            '<button class="settings-item" data-panel="' + item.id + '">' +
+        .map(function (item) {
+          return '<button class="settings-item" data-panel="' + item.id + '">' +
             '<div class="settings-icon">' + item.icon + "</div>" +
             '<div class="settings-info">' +
             '<p class="title">' + item.label + "</p>" +
             '<p class="desc">' + esc(item.desc) + "</p></div>" +
             '<svg class="settings-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>' +
-            "</button>"
-        )
+            "</button>";
+        })
         .join("") +
-      '<button class="btn-destructive" id="btn-reset-onboarding" style="width:100%;margin-top:1rem">Reset Onboarding</button>';
+      '<div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:0.5rem">' +
+      '<button class="btn btn-ghost" id="btn-reset-onboarding" style="width:100%">Reset Onboarding</button>' +
+      '<button class="btn btn-ghost" id="btn-sign-out" style="width:100%">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> Sign Out</button>' +
+      '<button class="btn-destructive" id="btn-delete-account" style="width:100%">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg> Delete Account</button>' +
+      '</div>';
 
-    el.querySelectorAll(".settings-item").forEach((btn) => {
-      btn.addEventListener("click", () => openSettingsPanel(btn.dataset.panel));
+    el.querySelectorAll(".settings-item").forEach(function (btn) {
+      btn.addEventListener("click", function () { openSettingsPanel(btn.dataset.panel); });
     });
 
-    document.getElementById("btn-reset-onboarding").addEventListener("click", () => {
+    document.getElementById("btn-reset-onboarding").addEventListener("click", function () {
       updateProfile({ onboarded: false });
       showOnboarding();
     });
+
+    document.getElementById("btn-sign-out").addEventListener("click", handleSignOut);
+    document.getElementById("btn-delete-account").addEventListener("click", handleDeleteAccount);
   }
 
   function openSettingsPanel(panelId) {
-    const content = document.getElementById("settings-panel-content");
-    let html =
+    var content = document.getElementById("settings-panel-content");
+    var html =
       '<button class="back-btn" id="sp-back"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg> Back</button>';
 
-    if (panelId === "profile") {
-      html += buildProfilePanel();
-    } else if (panelId === "units") {
-      html += buildUnitsPanel();
-    } else if (panelId === "goal") {
-      html += buildGoalPanel();
-    } else if (panelId === "reminders") {
-      html += buildRemindersPanel();
-    } else if (panelId === "appearance") {
-      html += buildAppearancePanel();
-    } else if (panelId === "about") {
-      html += buildAboutPanel();
-    }
+    if (panelId === "profile") html += buildProfilePanel();
+    else if (panelId === "units") html += buildUnitsPanel();
+    else if (panelId === "goal") html += buildGoalPanel();
+    else if (panelId === "reminders") html += buildRemindersPanel();
+    else if (panelId === "appearance") html += buildAppearancePanel();
+    else if (panelId === "about") html += buildAboutPanel();
 
     content.innerHTML = html;
 
     document.getElementById("settings-overlay").classList.add("open");
     document.getElementById("settings-panel").classList.add("open");
-
     document.getElementById("sp-back").addEventListener("click", closeSettingsPanel);
 
-    // Bind panel-specific events
     if (panelId === "profile") bindProfilePanel();
     if (panelId === "units") bindUnitsPanel();
     if (panelId === "goal") bindGoalPanel();
@@ -856,18 +1517,18 @@
   }
 
   function bindProfilePanel() {
-    document.getElementById("sp-name").addEventListener("input", (e) => updateProfile({ name: e.target.value }));
-    document.getElementById("sp-age").addEventListener("input", (e) => updateProfile({ age: parseInt(e.target.value) || 0 }));
-    document.querySelectorAll("#settings-panel-content .sex-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.getElementById("sp-name").addEventListener("input", function (e) { updateProfile({ name: e.target.value }); });
+    document.getElementById("sp-age").addEventListener("input", function (e) { updateProfile({ age: parseInt(e.target.value) || 0 }); });
+    document.querySelectorAll("#settings-panel-content .sex-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ sex: btn.dataset.sex });
-        document.querySelectorAll("#settings-panel-content .sex-btn").forEach((b) => b.classList.toggle("selected", b.dataset.sex === profile.sex));
+        document.querySelectorAll("#settings-panel-content .sex-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.sex === profile.sex); });
       });
     });
-    document.getElementById("sp-hft").addEventListener("input", (e) => updateProfile({ heightFt: parseInt(e.target.value) || 0 }));
-    document.getElementById("sp-hin").addEventListener("input", (e) => updateProfile({ heightIn: parseInt(e.target.value) || 0 }));
-    document.getElementById("sp-weight").addEventListener("input", (e) => updateProfile({ weight: parseInt(e.target.value) || 0 }));
-    document.getElementById("sp-recalc").addEventListener("click", () => {
+    document.getElementById("sp-hft").addEventListener("input", function (e) { updateProfile({ heightFt: parseInt(e.target.value) || 0 }); });
+    document.getElementById("sp-hin").addEventListener("input", function (e) { updateProfile({ heightIn: parseInt(e.target.value) || 0 }); });
+    document.getElementById("sp-weight").addEventListener("input", function (e) { updateProfile({ weight: parseInt(e.target.value) || 0 }); });
+    document.getElementById("sp-recalc").addEventListener("click", function () {
       recalculate();
       closeSettingsPanel();
     });
@@ -885,17 +1546,17 @@
   }
 
   function bindUnitsPanel() {
-    document.querySelectorAll("#settings-panel-content .selection-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#settings-panel-content .selection-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ units: btn.dataset.units });
-        document.querySelectorAll("#settings-panel-content .selection-btn").forEach((b) => b.classList.toggle("selected", b.dataset.units === profile.units));
+        document.querySelectorAll("#settings-panel-content .selection-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.units === profile.units); });
       });
     });
   }
 
   // ── Goal Panel ──
   function buildGoalPanel() {
-    const goals = [
+    var goals = [
       { value: "lose", label: "Lose Weight", emoji: "📉" },
       { value: "maintain", label: "Maintain Weight", emoji: "⚖️" },
       { value: "gain", label: "Build Muscle", emoji: "💪" },
@@ -903,17 +1564,16 @@
     return (
       '<h2 class="font-display" style="font-size:1.25rem;font-weight:700;color:hsl(var(--foreground))">Goal</h2>' +
       goals
-        .map(
-          (g) =>
-            '<button class="selection-btn' + (profile.goal === g.value ? " selected" : "") + '" data-goal="' + g.value + '">' +
-            '<div class="goal-option"><span class="emoji">' + g.emoji + "</span><p class='label-text'>" + g.label + "</p></div></button>"
-        )
+        .map(function (g) {
+          return '<button class="selection-btn' + (profile.goal === g.value ? " selected" : "") + '" data-goal="' + g.value + '">' +
+            '<div class="goal-option"><span class="emoji">' + g.emoji + "</span><p class='label-text'>" + g.label + "</p></div></button>";
+        })
         .join("") +
       '<div id="sp-rate-section" style="' + (profile.goal === "maintain" ? "display:none" : "") + '">' +
       '<label class="label" style="margin-top:1rem">Rate: <span id="sp-rate-display">' + profile.rate + '</span> lb/week</label>' +
       '<div class="rate-selector">' +
       [0.5, 1, 1.5, 2]
-        .map((r) => '<button class="rate-btn' + (profile.rate === r ? " selected" : "") + '" data-rate="' + r + '">' + r + "</button>")
+        .map(function (r) { return '<button class="rate-btn' + (profile.rate === r ? " selected" : "") + '" data-rate="' + r + '">' + r + "</button>"; })
         .join("") +
       "</div></div>" +
       '<button class="btn btn-primary" id="sp-update-goal" style="margin-top:1rem"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Update Targets</button>'
@@ -921,21 +1581,21 @@
   }
 
   function bindGoalPanel() {
-    document.querySelectorAll("#settings-panel-content .selection-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#settings-panel-content .selection-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ goal: btn.dataset.goal });
-        document.querySelectorAll("#settings-panel-content .selection-btn").forEach((b) => b.classList.toggle("selected", b.dataset.goal === profile.goal));
+        document.querySelectorAll("#settings-panel-content .selection-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.goal === profile.goal); });
         document.getElementById("sp-rate-section").style.display = profile.goal === "maintain" ? "none" : "";
       });
     });
-    document.querySelectorAll("#settings-panel-content .rate-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#settings-panel-content .rate-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ rate: parseFloat(btn.dataset.rate) });
-        document.querySelectorAll("#settings-panel-content .rate-btn").forEach((b) => b.classList.toggle("selected", parseFloat(b.dataset.rate) === profile.rate));
+        document.querySelectorAll("#settings-panel-content .rate-btn").forEach(function (b) { b.classList.toggle("selected", parseFloat(b.dataset.rate) === profile.rate); });
         document.getElementById("sp-rate-display").textContent = profile.rate;
       });
     });
-    document.getElementById("sp-update-goal").addEventListener("click", () => {
+    document.getElementById("sp-update-goal").addEventListener("click", function () {
       recalculate();
       closeSettingsPanel();
     });
@@ -958,19 +1618,19 @@
   }
 
   function bindRemindersPanel() {
-    document.getElementById("sp-toggle-reminder").addEventListener("click", () => {
+    document.getElementById("sp-toggle-reminder").addEventListener("click", function () {
       updateProfile({ reminderEnabled: !profile.reminderEnabled });
       document.getElementById("sp-toggle-reminder").classList.toggle("on", profile.reminderEnabled);
       document.getElementById("sp-reminder-time").style.display = profile.reminderEnabled ? "" : "none";
     });
-    document.getElementById("sp-rtime").addEventListener("input", (e) => {
+    document.getElementById("sp-rtime").addEventListener("input", function (e) {
       updateProfile({ reminderTime: e.target.value });
     });
   }
 
   // ── Appearance Panel ──
   function buildAppearancePanel() {
-    const theme = getTheme();
+    var theme = getTheme();
     return (
       '<h2 class="font-display" style="font-size:1.25rem;font-weight:700;color:hsl(var(--foreground))">Appearance</h2>' +
       '<button class="selection-btn' + (theme === "light" ? " selected" : "") + '" data-theme="light">' +
@@ -985,10 +1645,10 @@
   }
 
   function bindAppearancePanel() {
-    document.querySelectorAll("#settings-panel-content .selection-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#settings-panel-content .selection-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         setTheme(btn.dataset.theme);
-        document.querySelectorAll("#settings-panel-content .selection-btn").forEach((b) => b.classList.toggle("selected", b.dataset.theme === getTheme()));
+        document.querySelectorAll("#settings-panel-content .selection-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.theme === getTheme()); });
       });
     });
   }
@@ -1016,37 +1676,38 @@
 
   function drawLineChart(container, data, labelKey, valueKey, valueSuffix) {
     if (!container) return;
-    const W = container.clientWidth || 300;
-    const H = container.clientHeight || 144;
-    const pad = { top: 10, right: 15, bottom: 25, left: 15 };
-    const innerW = W - pad.left - pad.right;
-    const innerH = H - pad.top - pad.bottom;
+    var W = container.clientWidth || 300;
+    var H = container.clientHeight || 144;
+    var pad = { top: 10, right: 15, bottom: 25, left: 15 };
+    var innerW = W - pad.left - pad.right;
+    var innerH = H - pad.top - pad.bottom;
 
-    const values = data.map((d) => d[valueKey]);
-    const min = Math.min(...values) - 1;
-    const max = Math.max(...values) + 1;
-    const range = max - min || 1;
+    var values = data.map(function (d) { return d[valueKey]; });
+    var min = Math.min.apply(null, values) - 1;
+    var max = Math.max.apply(null, values) + 1;
+    var range = max - min || 1;
 
-    const points = data.map((d, i) => ({
-      x: pad.left + (i / (data.length - 1)) * innerW,
-      y: pad.top + (1 - (d[valueKey] - min) / range) * innerH,
-      label: d[labelKey],
-      value: d[valueKey],
-    }));
+    var points = data.map(function (d, i) {
+      return {
+        x: pad.left + (i / (data.length - 1 || 1)) * innerW,
+        y: pad.top + (1 - (d[valueKey] - min) / range) * innerH,
+        label: d[labelKey],
+        value: d[valueKey],
+      };
+    });
 
-    const pathD = points.map((p, i) => (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1)).join(" ");
+    var pathD = points.map(function (p, i) { return (i === 0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1); }).join(" ");
 
-    let svg =
+    var svg =
       '<svg class="chart-svg" viewBox="0 0 ' + W + " " + H + '">' +
       '<path class="chart-line" d="' + pathD + '"/>';
 
-    points.forEach((p, i) => {
+    points.forEach(function (p, i) {
       svg += '<circle class="chart-dot" cx="' + p.x.toFixed(1) + '" cy="' + p.y.toFixed(1) + '" r="3" data-idx="' + i + '"/>';
     });
 
-    // X labels
-    data.forEach((d, i) => {
-      const x = pad.left + (i / (data.length - 1)) * innerW;
+    data.forEach(function (d, i) {
+      var x = pad.left + (i / (data.length - 1 || 1)) * innerW;
       svg += '<text class="chart-label" x="' + x.toFixed(1) + '" y="' + (H - 4) + '">' + d[labelKey] + "</text>";
     });
 
@@ -1055,19 +1716,18 @@
 
     container.innerHTML = svg;
 
-    // Tooltip events
-    const tooltip = container.querySelector(".chart-tooltip");
-    container.querySelectorAll(".chart-dot").forEach((dot) => {
-      dot.addEventListener("mouseenter", () => {
-        const idx = parseInt(dot.dataset.idx);
-        const p = points[idx];
+    var tooltip = container.querySelector(".chart-tooltip");
+    container.querySelectorAll(".chart-dot").forEach(function (dot) {
+      dot.addEventListener("mouseenter", function () {
+        var idx = parseInt(dot.dataset.idx);
+        var p = points[idx];
         tooltip.querySelector(".tooltip-label").textContent = p.label;
         tooltip.querySelector(".tooltip-value").textContent = p.value + (valueSuffix || "");
         tooltip.style.left = Math.min(p.x - 30, W - 80) + "px";
         tooltip.style.top = p.y - 45 + "px";
         tooltip.classList.add("visible");
       });
-      dot.addEventListener("mouseleave", () => {
+      dot.addEventListener("mouseleave", function () {
         tooltip.classList.remove("visible");
       });
     });
@@ -1075,22 +1735,22 @@
 
   function drawBarChart(container, data, labelKey, valueKey, valueSuffix) {
     if (!container) return;
-    const W = container.clientWidth || 300;
-    const H = container.clientHeight || 144;
-    const pad = { top: 10, right: 10, bottom: 25, left: 10 };
-    const innerW = W - pad.left - pad.right;
-    const innerH = H - pad.top - pad.bottom;
+    var W = container.clientWidth || 300;
+    var H = container.clientHeight || 144;
+    var pad = { top: 10, right: 10, bottom: 25, left: 10 };
+    var innerW = W - pad.left - pad.right;
+    var innerH = H - pad.top - pad.bottom;
 
-    const maxVal = 120;
-    const barW = (innerW / data.length) * 0.6;
-    const gap = (innerW / data.length) * 0.4;
+    var maxVal = 120;
+    var barW = (innerW / data.length) * 0.6;
+    var gap = (innerW / data.length) * 0.4;
 
-    let svg = '<svg class="chart-svg" viewBox="0 0 ' + W + " " + H + '">';
+    var svg = '<svg class="chart-svg" viewBox="0 0 ' + W + " " + H + '">';
 
-    data.forEach((d, i) => {
-      const x = pad.left + (i / data.length) * innerW + gap / 2;
-      const barH = (d[valueKey] / maxVal) * innerH;
-      const y = pad.top + innerH - barH;
+    data.forEach(function (d, i) {
+      var x = pad.left + (i / data.length) * innerW + gap / 2;
+      var barH = (d[valueKey] / maxVal) * innerH;
+      var y = pad.top + innerH - barH;
       svg +=
         '<rect class="chart-bar" x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + barW.toFixed(1) + '" height="' + barH.toFixed(1) + '" rx="4" data-idx="' + i + '"/>';
       svg +=
@@ -1102,20 +1762,20 @@
 
     container.innerHTML = svg;
 
-    const tooltip = container.querySelector(".chart-tooltip");
-    container.querySelectorAll(".chart-bar").forEach((bar) => {
-      bar.addEventListener("mouseenter", () => {
-        const idx = parseInt(bar.dataset.idx);
-        const d = data[idx];
+    var tooltip = container.querySelector(".chart-tooltip");
+    container.querySelectorAll(".chart-bar").forEach(function (bar) {
+      bar.addEventListener("mouseenter", function () {
+        var idx = parseInt(bar.dataset.idx);
+        var d = data[idx];
         tooltip.querySelector(".tooltip-label").textContent = d[labelKey];
         tooltip.querySelector(".tooltip-value").textContent = d[valueKey] + (valueSuffix || "");
-        const x = parseFloat(bar.getAttribute("x"));
-        const y = parseFloat(bar.getAttribute("y"));
+        var x = parseFloat(bar.getAttribute("x"));
+        var y = parseFloat(bar.getAttribute("y"));
         tooltip.style.left = Math.min(x - 20, W - 80) + "px";
         tooltip.style.top = y - 45 + "px";
         tooltip.classList.add("visible");
       });
-      bar.addEventListener("mouseleave", () => {
+      bar.addEventListener("mouseleave", function () {
         tooltip.classList.remove("visible");
       });
     });
@@ -1126,9 +1786,45 @@
   // ══════════════════════════════════════════════════════════
 
   function esc(str) {
-    const d = document.createElement("div");
+    var d = document.createElement("div");
     d.textContent = str;
     return d.innerHTML;
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // DATA LOADING (called after auth)
+  // ══════════════════════════════════════════════════════════
+
+  async function loadAllData() {
+    // 1. Load from cache first (instant)
+    profile = loadProfileFromCache();
+    loadFoodEntriesFromCache();
+    loadWeightLogsFromCache();
+    loadMealPlanFromCache();
+    loadAdjustmentsFromCache();
+
+    // 2. Sync from Supabase in background (updates cache)
+    await Promise.all([
+      loadProfileFromSupabase(),
+      loadFoodEntriesFromSupabase(),
+      loadWeightLogsFromSupabase(),
+      loadMealPlanFromSupabase(),
+      loadAdjustmentsFromSupabase(),
+    ]);
+  }
+
+  async function startApp() {
+    hideAuth();
+
+    await loadAllData();
+
+    if (profile.onboarded) {
+      document.getElementById("onboarding").style.display = "none";
+      document.getElementById("bottom-nav").style.display = "";
+      handleRoute();
+    } else {
+      showOnboarding();
+    }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1139,10 +1835,44 @@
     // Theme
     setTheme(getTheme());
 
+    // Auth events
+    document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
+    document.getElementById("auth-toggle-btn").addEventListener("click", toggleAuthMode);
+
+    // Auth state listener
+    var appStarted = false;
+    supabase.auth.onAuthStateChange(function (event, session) {
+      if (session && session.user) {
+        currentUser = session.user;
+        if (!appStarted) {
+          appStarted = true;
+          startApp();
+        }
+      } else if (event === "SIGNED_OUT") {
+        currentUser = null;
+        appStarted = false;
+        showAuth();
+      }
+    });
+
+    // Check for existing session (fallback if onAuthStateChange doesn't fire)
+    supabase.auth.getSession().then(function (result) {
+      var session = result.data.session;
+      if (session && session.user) {
+        currentUser = session.user;
+        if (!appStarted) {
+          appStarted = true;
+          startApp();
+        }
+      } else if (!appStarted) {
+        showAuth();
+      }
+    });
+
     // Router
     window.addEventListener("hashchange", handleRoute);
-    document.querySelectorAll(".nav-item").forEach((btn) => {
-      btn.addEventListener("click", () => navigate(btn.dataset.page));
+    document.querySelectorAll(".nav-item").forEach(function (btn) {
+      btn.addEventListener("click", function () { navigate(btn.dataset.page); });
     });
 
     // Onboarding events
@@ -1150,55 +1880,57 @@
     document.getElementById("onboarding-back").addEventListener("click", obBack);
 
     // Basics step
-    document.getElementById("ob-name").addEventListener("input", (e) => {
+    document.getElementById("ob-name").addEventListener("input", function (e) {
       updateProfile({ name: e.target.value });
       updateBasicsBtn();
     });
-    document.getElementById("ob-age").addEventListener("input", (e) => updateProfile({ age: parseInt(e.target.value) || 0 }));
-    document.querySelectorAll("#step-basics .sex-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.getElementById("ob-age").addEventListener("input", function (e) { updateProfile({ age: parseInt(e.target.value) || 0 }); });
+    document.querySelectorAll("#step-basics .sex-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ sex: btn.dataset.sex });
-        document.querySelectorAll("#step-basics .sex-btn").forEach((b) => b.classList.toggle("selected", b.dataset.sex === profile.sex));
+        document.querySelectorAll("#step-basics .sex-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.sex === profile.sex); });
       });
     });
     document.getElementById("btn-basics-next").addEventListener("click", obNext);
 
     // Body step
-    document.getElementById("ob-height-ft").addEventListener("input", (e) => updateProfile({ heightFt: parseInt(e.target.value) || 0 }));
-    document.getElementById("ob-height-in").addEventListener("input", (e) => updateProfile({ heightIn: parseInt(e.target.value) || 0 }));
-    document.getElementById("ob-weight").addEventListener("input", (e) => updateProfile({ weight: parseInt(e.target.value) || 0 }));
+    document.getElementById("ob-height-ft").addEventListener("input", function (e) { updateProfile({ heightFt: parseInt(e.target.value) || 0 }); });
+    document.getElementById("ob-height-in").addEventListener("input", function (e) { updateProfile({ heightIn: parseInt(e.target.value) || 0 }); });
+    document.getElementById("ob-weight").addEventListener("input", function (e) { updateProfile({ weight: parseInt(e.target.value) || 0 }); });
     document.getElementById("btn-body-next").addEventListener("click", obNext);
 
     // Activity step
-    document.querySelectorAll("#activity-options .selection-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#activity-options .selection-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ activityLevel: btn.dataset.activity });
-        document.querySelectorAll("#activity-options .selection-btn").forEach((b) => b.classList.toggle("selected", b.dataset.activity === profile.activityLevel));
+        document.querySelectorAll("#activity-options .selection-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.activity === profile.activityLevel); });
       });
     });
     document.getElementById("btn-activity-next").addEventListener("click", obNext);
 
     // Goal step
-    document.querySelectorAll("#goal-options .selection-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#goal-options .selection-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ goal: btn.dataset.goal });
-        document.querySelectorAll("#goal-options .selection-btn").forEach((b) => b.classList.toggle("selected", b.dataset.goal === profile.goal));
+        document.querySelectorAll("#goal-options .selection-btn").forEach(function (b) { b.classList.toggle("selected", b.dataset.goal === profile.goal); });
         document.getElementById("rate-section").style.display = profile.goal === "maintain" ? "none" : "";
       });
     });
-    document.querySelectorAll("#step-goal .rate-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
+    document.querySelectorAll("#step-goal .rate-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
         updateProfile({ rate: parseFloat(btn.dataset.rate) });
-        document.querySelectorAll("#step-goal .rate-btn").forEach((b) => b.classList.toggle("selected", parseFloat(b.dataset.rate) === profile.rate));
+        document.querySelectorAll("#step-goal .rate-btn").forEach(function (b) { b.classList.toggle("selected", parseFloat(b.dataset.rate) === profile.rate); });
         document.getElementById("rate-display").textContent = profile.rate;
       });
     });
     document.getElementById("btn-goal-next").addEventListener("click", obNext);
 
     // Results / finish
-    document.getElementById("btn-start-tracking").addEventListener("click", () => {
-      const macros = calculateMacros(profile);
+    document.getElementById("btn-start-tracking").addEventListener("click", function () {
+      var macros = calculateMacros(profile);
       updateProfile({ ...macros, onboarded: true });
+      // Record initial adjustment
+      addAdjustment({ calories: 0, protein: 0, carbs: 0, fats: 0 }, macros, "Initial targets set from onboarding");
       hideOnboarding();
     });
 
@@ -1209,7 +1941,7 @@
     document.getElementById("fab-log").addEventListener("click", openQuickLog);
     document.getElementById("quicklog-overlay").addEventListener("click", closeQuickLog);
     document.getElementById("quicklog-close").addEventListener("click", closeQuickLog);
-    document.getElementById("food-search").addEventListener("input", (e) => renderFoodList(e.target.value));
+    document.getElementById("food-search").addEventListener("input", function (e) { renderFoodList(e.target.value); });
 
     // Settings panel overlay close
     document.getElementById("settings-overlay").addEventListener("click", closeSettingsPanel);
@@ -1217,14 +1949,40 @@
     // Meal plan generate
     document.getElementById("btn-generate-meal").addEventListener("click", generateMealPlan);
 
-    // Start
-    if (profile.onboarded) {
-      document.getElementById("onboarding").style.display = "none";
-      document.getElementById("bottom-nav").style.display = "";
-      handleRoute();
-    } else {
-      showOnboarding();
-    }
+    // Exclusion tags
+    document.getElementById("btn-add-exclusion").addEventListener("click", addExclusion);
+    document.getElementById("exclusion-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        addExclusion();
+      }
+    });
+
+    // Weight logging
+    document.getElementById("btn-log-weight").addEventListener("click", function () {
+      var input = document.getElementById("weight-log-input");
+      var val = parseFloat(input.value);
+      var statusEl = document.getElementById("weight-log-status");
+      if (!val || val <= 0 || val > 1500) {
+        statusEl.textContent = "Please enter a valid weight";
+        statusEl.style.color = "hsl(var(--destructive))";
+        return;
+      }
+      logWeight(val);
+      statusEl.textContent = "Weight logged for today!";
+      statusEl.style.color = "hsl(var(--success))";
+      // Re-render if on progress page
+      renderProgress();
+      // Also update the home weekly chart
+      renderWeeklyChart();
+    });
+
+    document.getElementById("weight-log-input").addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        document.getElementById("btn-log-weight").click();
+      }
+    });
   }
 
   // ── Boot ─────────────────────────────────────────────────

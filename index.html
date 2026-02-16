@@ -6,9 +6,35 @@
   <title>MacroCore</title>
   <link rel="stylesheet" href="styles.css">
   <link rel="icon" href="../public/favicon.ico">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
   <div class="app-container" id="app">
+
+    <!-- ========== AUTH MODAL ========== -->
+    <div class="auth-overlay" id="auth-overlay">
+      <div class="auth-modal">
+        <img src="logo.png" alt="MacroCore" class="welcome-logo" style="margin-bottom:1rem">
+        <h2 class="font-display" id="auth-title">Welcome to MacroCore</h2>
+        <p class="auth-subtitle" id="auth-subtitle">Sign in to sync your data across devices</p>
+        <div id="auth-error" class="auth-error" style="display:none"></div>
+        <form id="auth-form" class="auth-form">
+          <div>
+            <label class="label">Email</label>
+            <input type="email" class="input" id="auth-email" placeholder="you@example.com" required>
+          </div>
+          <div>
+            <label class="label">Password</label>
+            <input type="password" class="input" id="auth-password" placeholder="Min 6 characters" required minlength="6">
+          </div>
+          <button type="submit" class="btn btn-primary" id="auth-submit" style="width:100%">Sign In</button>
+        </form>
+        <p class="auth-toggle">
+          <span id="auth-toggle-text">Don't have an account?</span>
+          <button class="btn-link" id="auth-toggle-btn">Sign Up</button>
+        </p>
+      </div>
+    </div>
 
     <!-- ========== ONBOARDING ========== -->
     <div class="onboarding" id="onboarding">
@@ -30,9 +56,7 @@
         <!-- Step: Welcome -->
         <div class="onboarding-step active" id="step-welcome">
           <div class="welcome-screen">
-            <div class="welcome-icon">
-              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
-            </div>
+            <img src="logo.png" alt="MacroCore" class="welcome-logo">
             <h1 class="font-display">MacroCore</h1>
             <p>Smart nutrition that adapts to you. One number, not a spreadsheet.</p>
             <button class="btn btn-primary" id="btn-get-started" style="max-width:20rem;margin-top:2.5rem">
@@ -323,8 +347,24 @@
         <p id="meals-macro-summary"></p>
       </header>
       <div class="page-content">
-        <div style="display:flex;flex-direction:column;gap:0.5rem">
-          <input type="text" class="input" id="meal-preferences" placeholder="Preferences (e.g. vegetarian, no dairy, high protein...)">
+        <div style="display:flex;flex-direction:column;gap:0.75rem">
+          <div>
+            <label class="label">Dietary Preferences</label>
+            <input type="text" class="input" id="meal-preferences" placeholder="e.g. vegetarian, high protein, Mediterranean...">
+          </div>
+          <div>
+            <label class="label">Allergies & Dislikes</label>
+            <div class="tag-input-wrap">
+              <div class="tag-list" id="exclusion-tags"></div>
+              <div style="display:flex;gap:0.5rem">
+                <input type="text" class="input" id="exclusion-input" placeholder="e.g. peanuts, shellfish, mushrooms..." style="flex:1">
+                <button class="btn btn-ghost" id="btn-add-exclusion" style="white-space:nowrap;padding:0.625rem 0.75rem">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+                  Add
+                </button>
+              </div>
+            </div>
+          </div>
           <button class="btn btn-primary" id="btn-generate-meal">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
             Generate Meal Plan
@@ -342,6 +382,20 @@
       </header>
       <div class="page-content">
         <div class="stats-grid" id="progress-stats"></div>
+        <div class="card" id="weight-log-card">
+          <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:0.75rem">Log Today's Weight</h3>
+          <div style="display:flex;gap:0.5rem;align-items:center">
+            <div class="input-with-suffix" style="flex:1">
+              <input type="number" class="input" id="weight-log-input" placeholder="e.g. 180" step="0.1" inputmode="decimal" min="1" max="1000">
+              <span class="input-suffix">lbs</span>
+            </div>
+            <button class="btn btn-primary" id="btn-log-weight" style="white-space:nowrap">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              Log
+            </button>
+          </div>
+          <p id="weight-log-status" style="font-size:0.75rem;color:hsl(var(--muted-foreground));margin-top:0.5rem"></p>
+        </div>
         <div class="card" id="weight-trend-card">
           <div class="chart-header">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
@@ -412,41 +466,7 @@
         <!-- Adjustment History -->
         <div class="card">
           <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:0.75rem">Adjustment History</h3>
-          <div style="display:flex;flex-direction:column;gap:0.75rem">
-            <div class="adjustment-item">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              <div class="adjustment-info">
-                <div class="adj-header">
-                  <span class="adj-week">Week 3</span>
-                  <svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                  <span class="adj-change">Calories reduced by 100</span>
-                </div>
-                <p class="adj-reason">Adherence was high, weight stalled</p>
-              </div>
-            </div>
-            <div class="adjustment-item">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              <div class="adjustment-info">
-                <div class="adj-header">
-                  <span class="adj-week">Week 2</span>
-                  <svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                  <span class="adj-change">Protein increased to 165g</span>
-                </div>
-                <p class="adj-reason">Based on body weight recalculation</p>
-              </div>
-            </div>
-            <div class="adjustment-item">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
-              <div class="adjustment-info">
-                <div class="adj-header">
-                  <span class="adj-week">Week 1</span>
-                  <svg class="adj-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
-                  <span class="adj-change">Initial targets set</span>
-                </div>
-                <p class="adj-reason">Based on onboarding data</p>
-              </div>
-            </div>
-          </div>
+          <div id="adjustment-history" style="display:flex;flex-direction:column;gap:0.75rem"></div>
         </div>
       </div>
     </div>

@@ -2155,6 +2155,13 @@
     });
   }
 
+  // ── Service Worker Registration ─────────────────────────
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("./service-worker.js").catch(function (err) {
+      console.warn("SW registration failed:", err);
+    });
+  }
+
   // ── Boot ─────────────────────────────────────────────────
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

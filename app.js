@@ -6,8 +6,8 @@
   "use strict";
 
   // ── Supabase config ──────────────────────────────────────
-  const SUPABASE_URL = "https://xftrbpjruitppdcdqzep.supabase.co";
-  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhmdHJicGpydWl0cHBkY2RxemVwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzA4Mzg5NzgsImV4cCI6MjA4NjQxNDk3OH0.e1Q4qbgUGRPi8VJsol1HdXKv5rUAH3F6V3i6EVDVsC8";
+  const SUPABASE_URL = "https://rxnqjdclqyazferbseeq.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ4bnFqZGNscXlhemZlcmJzZWVxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyODQ5NjcsImV4cCI6MjA4Njg2MDk2N30.MA1qhu_gU93MjoDiJsM2FFDlO2iYjSk_kAbwf0rx_9g";
 
   // Initialize Supabase client
   const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -26,7 +26,10 @@
     units: "imperial",
     reminderEnabled: true,
     reminderTime: "12:00",
+    weighInReminderEnabled: true,
+    weighInDay: "monday",
     onboarded: false,
+    startedAt: null,
     calories: 2200,
     protein: 165,
     carbs: 220,
@@ -74,16 +77,35 @@
   let mealPlanLoading = false;
 
   // ── Quick Foods DB ───────────────────────────────────────
+  // Macros per 100g for accurate serving-size calculation
   const QUICK_FOODS = [
-    { name: "Chicken Breast", calories: 165, protein: 31, carbs: 0, fats: 3.6, emoji: "🍗" },
-    { name: "Brown Rice (1 cup)", calories: 216, protein: 5, carbs: 45, fats: 1.8, emoji: "🍚" },
-    { name: "Banana", calories: 105, protein: 1.3, carbs: 27, fats: 0.4, emoji: "🍌" },
-    { name: "Greek Yogurt", calories: 130, protein: 17, carbs: 6, fats: 4, emoji: "🥛" },
-    { name: "Eggs (2 large)", calories: 143, protein: 13, carbs: 1, fats: 10, emoji: "🥚" },
-    { name: "Avocado (half)", calories: 120, protein: 1.5, carbs: 6, fats: 11, emoji: "🥑" },
-    { name: "Salmon Fillet", calories: 208, protein: 20, carbs: 0, fats: 13, emoji: "🐟" },
-    { name: "Oatmeal (1 cup)", calories: 154, protein: 5, carbs: 27, fats: 2.6, emoji: "🥣" },
+    { name: "Chicken Breast", cal100: 165, p100: 31, c100: 0, f100: 3.6, serving: 100, unit: "g", emoji: "🍗" },
+    { name: "Brown Rice (cooked)", cal100: 130, p100: 2.7, c100: 28, f100: 1, serving: 195, unit: "g", emoji: "🍚" },
+    { name: "Banana", cal100: 89, p100: 1.1, c100: 23, f100: 0.3, serving: 118, unit: "g", emoji: "🍌" },
+    { name: "Greek Yogurt", cal100: 59, p100: 10, c100: 3.6, f100: 0.4, serving: 227, unit: "g", emoji: "🥛" },
+    { name: "Eggs", cal100: 155, p100: 13, c100: 1.1, f100: 11, serving: 100, unit: "g", emoji: "🥚" },
+    { name: "Avocado", cal100: 160, p100: 2, c100: 8.5, f100: 14.7, serving: 75, unit: "g", emoji: "🥑" },
+    { name: "Salmon Fillet", cal100: 208, p100: 20, c100: 0, f100: 13, serving: 113, unit: "g", emoji: "🐟" },
+    { name: "Oatmeal (dry)", cal100: 389, p100: 16.9, c100: 66, f100: 6.9, serving: 40, unit: "g", emoji: "🥣" },
+    { name: "Sweet Potato", cal100: 86, p100: 1.6, c100: 20, f100: 0.1, serving: 130, unit: "g", emoji: "🍠" },
+    { name: "Ground Beef (lean)", cal100: 250, p100: 26, c100: 0, f100: 15, serving: 113, unit: "g", emoji: "🥩" },
+    { name: "White Rice (cooked)", cal100: 130, p100: 2.7, c100: 28, f100: 0.3, serving: 195, unit: "g", emoji: "🍚" },
+    { name: "Bread (whole wheat)", cal100: 247, p100: 13, c100: 41, f100: 3.4, serving: 28, unit: "g", emoji: "🍞" },
+    { name: "Pasta (cooked)", cal100: 131, p100: 5, c100: 25, f100: 1.1, serving: 140, unit: "g", emoji: "🍝" },
+    { name: "Broccoli", cal100: 34, p100: 2.8, c100: 7, f100: 0.4, serving: 91, unit: "g", emoji: "🥦" },
+    { name: "Almonds", cal100: 579, p100: 21, c100: 22, f100: 49.9, serving: 28, unit: "g", emoji: "🥜" },
+    { name: "Protein Shake", cal100: 400, p100: 75, c100: 13, f100: 6, serving: 32, unit: "g", emoji: "🥤" },
   ];
+
+  function calcFoodMacros(food, amount) {
+    var ratio = amount / 100;
+    return {
+      calories: Math.round(food.cal100 * ratio),
+      protein: Math.round(food.p100 * ratio * 10) / 10,
+      carbs: Math.round(food.c100 * ratio * 10) / 10,
+      fats: Math.round(food.f100 * ratio * 10) / 10,
+    };
+  }
 
   const MEALS = [
     { id: "breakfast", label: "Breakfast" },
@@ -303,7 +325,10 @@
         units: profile.units,
         reminder_enabled: profile.reminderEnabled,
         reminder_time: profile.reminderTime,
+        weigh_in_reminder_enabled: profile.weighInReminderEnabled,
+        weigh_in_day: profile.weighInDay,
         onboarded: profile.onboarded,
+        started_at: profile.startedAt || null,
         exclusions: profile.exclusions || [],
         updated_at: new Date().toISOString(),
       });
@@ -333,7 +358,10 @@
           units: data.units || "imperial",
           reminderEnabled: data.reminder_enabled !== false,
           reminderTime: data.reminder_time || "12:00",
+          weighInReminderEnabled: data.weigh_in_reminder_enabled !== false,
+          weighInDay: data.weigh_in_day || "monday",
           onboarded: data.onboarded || false,
+          startedAt: data.started_at || null,
           exclusions: data.exclusions || [],
         };
         cacheSet("profile", profile);
@@ -687,11 +715,11 @@
       btn.classList.toggle("active", btn.dataset.page === page);
     });
 
-    if (page === "home") renderHome();
-    if (page === "meals") renderMeals();
-    if (page === "progress") renderProgress();
-    if (page === "goals") renderGoals();
-    if (page === "settings") renderSettings();
+    try { if (page === "home") renderHome(); } catch(e) { console.error("renderHome error:", e); }
+    try { if (page === "meals") renderMeals(); } catch(e) { console.error("renderMeals error:", e); }
+    try { if (page === "progress") renderProgress(); } catch(e) { console.error("renderProgress error:", e); }
+    try { if (page === "goals") renderGoals(); } catch(e) { console.error("renderGoals error:", e); }
+    try { if (page === "settings") renderSettings(); } catch(e) { console.error("renderSettings error:", e); }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -795,8 +823,23 @@
   // HOME PAGE
   // ══════════════════════════════════════════════════════════
 
+  function getCurrentWeek() {
+    if (!profile.startedAt) return 1;
+    var start = new Date(profile.startedAt);
+    var now = new Date();
+    var diffMs = now - start;
+    var diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    return Math.max(1, Math.floor(diffDays / 7) + 1);
+  }
+
+  function updateWeekBadge() {
+    var el = document.getElementById("week-badge-text");
+    if (el) el.textContent = "Week " + getCurrentWeek();
+  }
+
   function renderHome() {
     updateGreeting();
+    updateWeekBadge();
     updateCalorieRing();
     renderWeeklyChart();
     renderTodayLog();
@@ -992,6 +1035,7 @@
     document.getElementById("quicklog-overlay").classList.remove("open");
     document.getElementById("quicklog-sheet").classList.remove("open");
     document.getElementById("food-search").value = "";
+    hideServingPanel();
   }
 
   function renderMealChips() {
@@ -1007,6 +1051,8 @@
     });
   }
 
+  var selectedFood = null;
+
   function renderFoodList(filter) {
     var el = document.getElementById("food-list");
     var query = (filter || "").toLowerCase();
@@ -1014,14 +1060,15 @@
 
     el.innerHTML = filtered
       .map(function (f) {
+        var macros = calcFoodMacros(f, f.serving);
         return '<button class="quick-food-item" data-food="' + esc(f.name) + '">' +
           '<span class="food-emoji">' + f.emoji + "</span>" +
           '<div class="food-info">' +
           '<p class="name">' + esc(f.name) + "</p>" +
-          '<p class="macros">P: ' + f.protein + "g · C: " + f.carbs + "g · F: " + f.fats + "g</p>" +
+          '<p class="macros">' + f.serving + f.unit + ' · P: ' + macros.protein + "g · C: " + macros.carbs + "g · F: " + macros.fats + "g</p>" +
           "</div>" +
           '<div class="food-cal-info">' +
-          '<p class="cal-num font-display">' + f.calories + "</p>" +
+          '<p class="cal-num font-display">' + macros.calories + "</p>" +
           '<p class="cal-label">cal</p>' +
           "</div></button>";
       })
@@ -1031,12 +1078,88 @@
       btn.addEventListener("click", function () {
         var food = QUICK_FOODS.find(function (f) { return f.name === btn.dataset.food; });
         if (!food) return;
-        addFoodEntry(food, selectedMeal);
-        updateCalorieRing();
-        renderTodayLog();
-        closeQuickLog();
+        showServingPanel(food);
       });
     });
+  }
+
+  function showServingPanel(food) {
+    selectedFood = food;
+    document.getElementById("serving-panel").style.display = "block";
+    document.getElementById("food-list-section").style.display = "none";
+    document.querySelector(".search-wrap").style.display = "none";
+    document.getElementById("serving-emoji").textContent = food.emoji;
+    document.getElementById("serving-food-name").textContent = food.name;
+    var amountInput = document.getElementById("serving-amount");
+    amountInput.value = food.serving;
+    document.getElementById("serving-unit").value = food.unit || "g";
+    updateServingMacros();
+    amountInput.focus();
+  }
+
+  function hideServingPanel() {
+    selectedFood = null;
+    document.getElementById("serving-panel").style.display = "none";
+    document.getElementById("food-list-section").style.display = "";
+    document.querySelector(".search-wrap").style.display = "";
+  }
+
+  function getServingGrams() {
+    var amount = parseFloat(document.getElementById("serving-amount").value) || 0;
+    var unit = document.getElementById("serving-unit").value;
+    return unit === "oz" ? amount * 28.3495 : amount;
+  }
+
+  function updateServingMacros() {
+    if (!selectedFood) return;
+    var grams = getServingGrams();
+    var macros = calcFoodMacros(selectedFood, grams);
+    document.getElementById("serving-macros").innerHTML =
+      '<span>' + macros.calories + ' cal</span>' +
+      '<span>P: ' + macros.protein + 'g</span>' +
+      '<span>C: ' + macros.carbs + 'g</span>' +
+      '<span>F: ' + macros.fats + 'g</span>';
+  }
+
+  function confirmServing() {
+    if (!selectedFood) return;
+    var grams = getServingGrams();
+    if (grams <= 0) return;
+    var macros = calcFoodMacros(selectedFood, grams);
+    var amount = parseFloat(document.getElementById("serving-amount").value) || 0;
+    var unit = document.getElementById("serving-unit").value;
+    var food = {
+      name: selectedFood.name + " (" + amount + unit + ")",
+      calories: macros.calories,
+      protein: macros.protein,
+      carbs: macros.carbs,
+      fats: macros.fats,
+    };
+    addFoodEntry(food, selectedMeal);
+    updateCalorieRing();
+    renderTodayLog();
+    hideServingPanel();
+    closeQuickLog();
+  }
+
+  function addCustomFood() {
+    var name = document.getElementById("custom-food-name").value.trim();
+    var cal = parseFloat(document.getElementById("custom-food-cal").value) || 0;
+    var protein = parseFloat(document.getElementById("custom-food-protein").value) || 0;
+    var carbs = parseFloat(document.getElementById("custom-food-carbs").value) || 0;
+    var fats = parseFloat(document.getElementById("custom-food-fats").value) || 0;
+    if (!name || cal <= 0) return;
+    var food = { name: name, calories: Math.round(cal), protein: protein, carbs: carbs, fats: fats };
+    addFoodEntry(food, selectedMeal);
+    updateCalorieRing();
+    renderTodayLog();
+    // Clear inputs
+    document.getElementById("custom-food-name").value = "";
+    document.getElementById("custom-food-cal").value = "";
+    document.getElementById("custom-food-protein").value = "";
+    document.getElementById("custom-food-carbs").value = "";
+    document.getElementById("custom-food-fats").value = "";
+    closeQuickLog();
   }
 
   // ══════════════════════════════════════════════════════════
@@ -1415,7 +1538,7 @@
         id: "reminders",
         icon: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>',
         label: "Reminders",
-        desc: profile.reminderEnabled ? "On · " + profile.reminderTime : "Off",
+        desc: (profile.reminderEnabled || profile.weighInReminderEnabled) ? "On" : "Off",
       },
       {
         id: "appearance",
@@ -1602,9 +1725,25 @@
   }
 
   // ── Reminders Panel ──
+  var DAYS_OF_WEEK = [
+    { value: "monday", label: "Monday" },
+    { value: "tuesday", label: "Tuesday" },
+    { value: "wednesday", label: "Wednesday" },
+    { value: "thursday", label: "Thursday" },
+    { value: "friday", label: "Friday" },
+    { value: "saturday", label: "Saturday" },
+    { value: "sunday", label: "Sunday" },
+  ];
+
   function buildRemindersPanel() {
+    var dayOptions = DAYS_OF_WEEK.map(function (d) {
+      return '<option value="' + d.value + '"' + (profile.weighInDay === d.value ? " selected" : "") + '>' + d.label + '</option>';
+    }).join("");
+
     return (
       '<h2 class="font-display" style="font-size:1.25rem;font-weight:700;color:hsl(var(--foreground))">Reminders</h2>' +
+
+      // Meal reminders
       '<div class="card" style="display:flex;align-items:center;justify-content:space-between">' +
       "<div><p style='font-size:0.875rem;font-weight:500;color:hsl(var(--foreground))'>Meal Reminders</p>" +
       "<p style='font-size:0.75rem;color:hsl(var(--muted-foreground))'>Get nudged to log meals</p></div>" +
@@ -1613,6 +1752,17 @@
       '<div id="sp-reminder-time" style="' + (profile.reminderEnabled ? "" : "display:none") + '">' +
       '<label class="label">Reminder Time</label>' +
       '<input type="time" class="input" id="sp-rtime" value="' + profile.reminderTime + '">' +
+      "</div>" +
+
+      // Weekly weigh-in reminder
+      '<div class="card" style="display:flex;align-items:center;justify-content:space-between;margin-top:0.75rem">' +
+      "<div><p style='font-size:0.875rem;font-weight:500;color:hsl(var(--foreground))'>Weekly Weigh-In</p>" +
+      "<p style='font-size:0.75rem;color:hsl(var(--muted-foreground))'>Remind you to log your weight</p></div>" +
+      '<button class="toggle' + (profile.weighInReminderEnabled ? " on" : "") + '" id="sp-toggle-weighin"><div class="toggle-knob"></div></button>' +
+      "</div>" +
+      '<div id="sp-weighin-day" style="' + (profile.weighInReminderEnabled ? "" : "display:none") + '">' +
+      '<label class="label">Weigh-In Day</label>' +
+      '<select class="input" id="sp-weighin-select">' + dayOptions + '</select>' +
       "</div>"
     );
   }
@@ -1625,6 +1775,14 @@
     });
     document.getElementById("sp-rtime").addEventListener("input", function (e) {
       updateProfile({ reminderTime: e.target.value });
+    });
+    document.getElementById("sp-toggle-weighin").addEventListener("click", function () {
+      updateProfile({ weighInReminderEnabled: !profile.weighInReminderEnabled });
+      document.getElementById("sp-toggle-weighin").classList.toggle("on", profile.weighInReminderEnabled);
+      document.getElementById("sp-weighin-day").style.display = profile.weighInReminderEnabled ? "" : "none";
+    });
+    document.getElementById("sp-weighin-select").addEventListener("change", function (e) {
+      updateProfile({ weighInDay: e.target.value });
     });
   }
 
@@ -1804,19 +1962,27 @@
     loadAdjustmentsFromCache();
 
     // 2. Sync from Supabase in background (updates cache)
-    await Promise.all([
-      loadProfileFromSupabase(),
-      loadFoodEntriesFromSupabase(),
-      loadWeightLogsFromSupabase(),
-      loadMealPlanFromSupabase(),
-      loadAdjustmentsFromSupabase(),
-    ]);
+    try {
+      await Promise.all([
+        loadProfileFromSupabase(),
+        loadFoodEntriesFromSupabase(),
+        loadWeightLogsFromSupabase(),
+        loadMealPlanFromSupabase(),
+        loadAdjustmentsFromSupabase(),
+      ]);
+    } catch (err) {
+      console.error("Supabase sync error:", err);
+    }
   }
 
   async function startApp() {
     hideAuth();
 
-    await loadAllData();
+    try {
+      await loadAllData();
+    } catch (err) {
+      console.error("loadAllData error (using cached data):", err);
+    }
 
     if (profile.onboarded) {
       document.getElementById("onboarding").style.display = "none";
@@ -1928,7 +2094,7 @@
     // Results / finish
     document.getElementById("btn-start-tracking").addEventListener("click", function () {
       var macros = calculateMacros(profile);
-      updateProfile({ ...macros, onboarded: true });
+      updateProfile({ ...macros, onboarded: true, startedAt: profile.startedAt || new Date().toISOString() });
       // Record initial adjustment
       addAdjustment({ calories: 0, protein: 0, carbs: 0, fats: 0 }, macros, "Initial targets set from onboarding");
       hideOnboarding();
@@ -1942,6 +2108,15 @@
     document.getElementById("quicklog-overlay").addEventListener("click", closeQuickLog);
     document.getElementById("quicklog-close").addEventListener("click", closeQuickLog);
     document.getElementById("food-search").addEventListener("input", function (e) { renderFoodList(e.target.value); });
+
+    // Serving size panel
+    document.getElementById("serving-cancel").addEventListener("click", hideServingPanel);
+    document.getElementById("serving-confirm").addEventListener("click", confirmServing);
+    document.getElementById("serving-amount").addEventListener("input", updateServingMacros);
+    document.getElementById("serving-unit").addEventListener("change", updateServingMacros);
+
+    // Custom food entry
+    document.getElementById("btn-custom-food").addEventListener("click", addCustomFood);
 
     // Settings panel overlay close
     document.getElementById("settings-overlay").addEventListener("click", closeSettingsPanel);
@@ -1959,7 +2134,7 @@
     });
 
     // Weight logging
-    document.getElementById("btn-log-weight").addEventListener("click", function () {
+    function handleWeightLog() {
       var input = document.getElementById("weight-log-input");
       var val = parseFloat(input.value);
       var statusEl = document.getElementById("weight-log-status");
@@ -1971,17 +2146,12 @@
       logWeight(val);
       statusEl.textContent = "Weight logged for today!";
       statusEl.style.color = "hsl(var(--success))";
-      // Re-render if on progress page
-      renderProgress();
-      // Also update the home weekly chart
-      renderWeeklyChart();
-    });
-
+      try { renderProgress(); } catch(err) { console.error("renderProgress error after log:", err); }
+      try { renderWeeklyChart(); } catch(err) { console.error("renderWeeklyChart error after log:", err); }
+    }
+    document.getElementById("btn-log-weight").addEventListener("click", handleWeightLog);
     document.getElementById("weight-log-input").addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        document.getElementById("btn-log-weight").click();
-      }
+      if (e.key === "Enter") { e.preventDefault(); handleWeightLog(); }
     });
   }
 

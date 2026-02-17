@@ -264,7 +264,7 @@
           </div>
           <div class="week-badge">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg>
-            <span>Week 4</span>
+            <span id="week-badge-text">Week 1</span>
           </div>
         </div>
       </header>
@@ -385,10 +385,8 @@
         <div class="card" id="weight-log-card">
           <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:0.75rem">Log Today's Weight</h3>
           <div style="display:flex;gap:0.5rem;align-items:center">
-            <div class="input-with-suffix" style="flex:1">
-              <input type="number" class="input" id="weight-log-input" placeholder="e.g. 180" step="0.1" inputmode="decimal" min="1" max="1000">
-              <span class="input-suffix">lbs</span>
-            </div>
+            <input type="text" inputmode="decimal" id="weight-log-input" placeholder="e.g. 180" style="flex:1;padding:0.75rem 1rem;background:hsl(var(--surface));border:1px solid hsl(var(--border));border-radius:0.75rem;color:hsl(var(--foreground));font-family:Inter,sans-serif;font-size:1rem;outline:none;box-sizing:border-box">
+            <span style="font-size:0.875rem;font-weight:600;color:hsl(var(--muted-foreground))">lbs</span>
             <button class="btn btn-primary" id="btn-log-weight" style="white-space:nowrap">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
               Log
@@ -538,13 +536,56 @@
         </button>
       </div>
       <div class="meal-chips" id="meal-chips"></div>
+
+      <!-- Serving size panel (shown when a food is selected) -->
+      <div id="serving-panel" style="display:none;padding:0 1rem">
+        <div class="card-compact" style="background:hsl(var(--surface));border-radius:0.75rem;padding:1rem;margin-bottom:0.75rem">
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.75rem">
+            <span id="serving-emoji" style="font-size:1.25rem"></span>
+            <p id="serving-food-name" style="font-weight:600;color:hsl(var(--foreground));font-size:0.9375rem"></p>
+          </div>
+          <div style="display:flex;gap:0.5rem;align-items:center;margin-bottom:0.75rem">
+            <input class="input" id="serving-amount" placeholder="Amount" autocomplete="off" style="flex:1">
+            <select class="input" id="serving-unit" style="width:auto;min-width:4rem">
+              <option value="g">g</option>
+              <option value="oz">oz</option>
+            </select>
+          </div>
+          <div id="serving-macros" style="display:flex;gap:0.75rem;font-size:0.75rem;color:hsl(var(--muted-foreground));margin-bottom:0.75rem"></div>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn btn-ghost" id="serving-cancel" style="flex:1;font-size:0.8125rem">Cancel</button>
+            <button class="btn btn-primary" id="serving-confirm" style="flex:1;font-size:0.8125rem">Add to Log</button>
+          </div>
+        </div>
+      </div>
+
       <div class="search-wrap">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
         <input type="text" placeholder="Search foods..." id="food-search">
       </div>
-      <div class="sheet-body">
+      <div class="sheet-body" id="food-list-section">
         <p class="food-list-label">Quick Add</p>
         <div class="food-list" id="food-list"></div>
+
+        <!-- Custom food entry -->
+        <p class="food-list-label" style="margin-top:1rem">Custom Entry</p>
+        <div class="card-compact" style="background:hsl(var(--surface));border-radius:0.75rem;padding:1rem">
+          <div style="display:flex;flex-direction:column;gap:0.5rem">
+            <input class="input" id="custom-food-name" placeholder="Food name" autocomplete="off">
+            <div style="display:flex;gap:0.5rem">
+              <input class="input" id="custom-food-cal" placeholder="Calories" autocomplete="off" style="flex:1">
+              <input class="input" id="custom-food-protein" placeholder="Protein (g)" autocomplete="off" style="flex:1">
+            </div>
+            <div style="display:flex;gap:0.5rem">
+              <input class="input" id="custom-food-carbs" placeholder="Carbs (g)" autocomplete="off" style="flex:1">
+              <input class="input" id="custom-food-fats" placeholder="Fat (g)" autocomplete="off" style="flex:1">
+            </div>
+            <button class="btn btn-primary" id="btn-custom-food" style="width:100%;font-size:0.8125rem;margin-top:0.25rem">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+              Add Custom Food
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 

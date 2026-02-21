@@ -491,7 +491,8 @@ test.describe('Quick Log Sheet', () => {
   test('clicking overlay dismisses sheet', async ({ page }) => {
     await page.locator('#fab-log').click();
     await page.waitForSelector('#quicklog-sheet.open');
-    await page.locator('#quicklog-overlay').click();
+    // Click the top portion of the overlay — the bottom sheet covers the center of the viewport
+    await page.locator('#quicklog-overlay').click({ position: { x: 200, y: 80 } });
     await expect(page.locator('#quicklog-sheet')).not.toHaveClass(/open/, { timeout: 3000 });
   });
 

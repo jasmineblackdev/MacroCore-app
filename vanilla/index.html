@@ -20,6 +20,12 @@
 <body>
   <div class="app-container" id="app">
 
+    <!-- ========== OFFLINE BANNER ========== -->
+    <div id="offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:9999;background:hsl(var(--surface));border-bottom:1px solid hsl(var(--border));padding:0.625rem 1rem;align-items:center;gap:0.5rem;justify-content:center">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="1" y1="1" x2="23" y2="23"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.56 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      <span style="font-size:0.75rem;color:hsl(var(--muted-foreground))">No internet — data saved locally</span>
+    </div>
+
     <!-- ========== AUTH MODAL ========== -->
     <div class="auth-overlay" id="auth-overlay">
       <div class="auth-modal">
@@ -394,8 +400,15 @@
     <!-- ========== PROGRESS PAGE ========== -->
     <div class="page" id="page-progress">
       <header class="page-header">
-        <h1 class="font-display">Progress</h1>
-        <p>Your journey over time</p>
+        <div class="header-row">
+          <div>
+            <h1 class="font-display">Progress</h1>
+            <p>Your journey over time</p>
+          </div>
+          <button class="btn btn-ghost" id="btn-share-progress" style="padding:0.5rem" aria-label="Share progress">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
+          </button>
+        </div>
       </header>
       <div class="page-content">
         <div class="stats-grid" id="progress-stats"></div>

@@ -8,9 +8,30 @@
 	<key>NSPrivacyTrackingDomains</key>
 	<array/>
 
+	<!-- ─────────────────────────────────────────────────────────── -->
+	<!-- Data types collected by MacroCore                         -->
+	<!-- Sources:                                                  -->
+	<!--   Supabase auth  → email address, user ID                -->
+	<!--   Supabase DB    → health data, food logs, meal plans     -->
+	<!--   Anthropic API  → food descriptions, dietary prefs       -->
+	<!--                    (sent WITHOUT user ID or email)        -->
+	<!-- ─────────────────────────────────────────────────────────── -->
 	<!-- Data types collected by MacroCore -->
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array>
+		<!-- User ID: Supabase UUID that links all data to the account -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeUserID</string>
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<true/>
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
 		<!-- Email address for account creation / authentication -->
 		<dict>
 			<key>NSPrivacyCollectedDataType</key>

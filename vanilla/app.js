@@ -63,6 +63,58 @@
     return new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   }
 
+  // ── Native Bridge (Capacitor) ────────────────────────────
+  var _Plugins = (window.Capacitor && window.Capacitor.Plugins) || {};
+
+  // Haptic feedback — silently ignored in browser
+  function haptic(style) {
+    if (!_Plugins.Haptics) return;
+    try { _Plugins.Haptics.impact({ style: style || 'Medium' }); } catch (_) {}
+  }
+
+  // Offline banner visibility
+  function setOfflineBanner(offline) {
+    var el = document.getElementById('offline-banner');
+    if (el) el.style.display = offline ? 'flex' : 'none';
+  }
+
+  // Start listening for connectivity changes
+  async function initNetworkMonitoring() {
+    if (!_Plugins.Network) return;
+    try {
+      var status = await _Plugins.Network.getStatus();
+      setOfflineBanner(!status.connected);
+      _Plugins.Network.addListener('networkStatusChange', function (s) {
+        setOfflineBanner(!s.connected);
+      });
+    } catch (_) {}
+  }
+
+  // Native share sheet with Web Share API fallback
+  async function shareProgress() {
+    var today = todayStr();
+    var consumed = foodEntries
+      .filter(function (e) { return e.date === today; })
+      .reduce(function (s, e) { return s + (e.calories || 0); }, 0);
+    var pct = profile.calories ? Math.round((consumed / profile.calories) * 100) : 0;
+    var goalLabel = profile.goal === 'lose' ? 'Fat loss' : profile.goal === 'gain' ? 'Muscle gain' : 'Maintenance';
+    var text =
+      'MacroCore — Week ' + getCurrentWeek() + '\n' +
+      'Goal: ' + goalLabel + '\n' +
+      'Today: ' + consumed + ' / ' + profile.calories + ' cal (' + pct + '%)\n' +
+      'Protein: ' + profile.protein + 'g · Carbs: ' + profile.carbs + 'g · Fat: ' + profile.fats + 'g';
+
+    if (_Plugins.Share) {
+      try {
+        await _Plugins.Share.share({ title: 'MacroCore Progress', text: text, dialogTitle: 'Share your progress' });
+        return;
+      } catch (_) {}
+    }
+    if (navigator.share) {
+      try { navigator.share({ title: 'MacroCore Progress', text: text }); } catch (_) {}
+    }
+  }
+
   // ── State ────────────────────────────────────────────────
   let currentUser = null;
   let guestMode = false;
@@ -2281,6 +2333,11 @@
       '<p style="font-size:0.875rem;font-weight:500;color:hsl(var(--foreground));margin-bottom:0.5rem">How It Works</p>' +
       '<p style="font-size:0.75rem;color:hsl(var(--muted-foreground));line-height:1.6">' +
       "MacroCore uses the Mifflin-St Jeor equation to calculate your basal metabolic rate, then applies an activity multiplier and goal adjustment. Each week, your targets are recalculated based on your 7-day average weight and adherence patterns." +
+      "</p></div>" +
+      '<div class="card" style="border:1px solid hsl(var(--border));background:hsl(var(--surface))">' +
+      '<p style="font-size:0.75rem;font-weight:600;color:hsl(var(--muted-foreground));text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem">Disclaimer</p>' +
+      '<p style="font-size:0.75rem;color:hsl(var(--muted-foreground));line-height:1.6">' +
+      "MacroCore is for educational and informational purposes only. It is not a medical device and does not provide medical advice. Calorie and macro targets are estimates based on general formulas and should not replace guidance from a registered dietitian, nutritionist, or healthcare provider. Consult a qualified professional before making significant changes to your diet." +
       "</p></div>"
     );
   }
@@ -2447,6 +2504,7 @@
       document.getElementById("bottom-nav").style.display = "";
       checkWeeklyAutoAdjust();
       initReminders();
+      initNetworkMonitoring();
       handleRoute();
     } else {
       showOnboarding();
@@ -2499,7 +2557,7 @@
     // Router
     window.addEventListener("hashchange", handleRoute);
     document.querySelectorAll(".nav-item").forEach(function (btn) {
-      btn.addEventListener("click", function () { navigate(btn.dataset.page); });
+      btn.addEventListener("click", function () { haptic('Light'); navigate(btn.dataset.page); });
     });
 
     // Onboarding events
@@ -2565,20 +2623,21 @@
     document.getElementById("calorie-ring-btn").addEventListener("click", toggleMacroBreakdown);
 
     // Quick log
-    document.getElementById("fab-log").addEventListener("click", openQuickLog);
+    document.getElementById("fab-log").addEventListener("click", function () { haptic(); openQuickLog(); });
+    document.getElementById("btn-share-progress").addEventListener("click", shareProgress);
     document.getElementById("quicklog-overlay").addEventListener("click", closeQuickLog);
     document.getElementById("quicklog-close").addEventListener("click", closeQuickLog);
     document.getElementById("food-search").addEventListener("input", function (e) { renderFoodList(e.target.value); });
 
     // Serving size panel
     document.getElementById("serving-cancel").addEventListener("click", hideServingPanel);
-    document.getElementById("serving-confirm").addEventListener("click", confirmServing);
+    document.getElementById("serving-confirm").addEventListener("click", function () { haptic(); confirmServing(); });
     document.getElementById("serving-amount").addEventListener("input", updateServingMacros);
     document.getElementById("serving-unit").addEventListener("change", updateServingMacros);
 
     // Custom food entry
     document.getElementById("btn-lookup-macros").addEventListener("click", lookupFoodMacros);
-    document.getElementById("btn-custom-food").addEventListener("click", addCustomFood);
+    document.getElementById("btn-custom-food").addEventListener("click", function () { haptic(); addCustomFood(); });
 
     // Settings panel overlay close
     document.getElementById("settings-overlay").addEventListener("click", closeSettingsPanel);
@@ -2611,7 +2670,7 @@
       try { renderProgress(); } catch(err) { console.error("renderProgress error after log:", err); }
       try { renderWeeklyChart(); } catch(err) { console.error("renderWeeklyChart error after log:", err); }
     }
-    document.getElementById("btn-log-weight").addEventListener("click", handleWeightLog);
+    document.getElementById("btn-log-weight").addEventListener("click", function () { haptic(); handleWeightLog(); });
     document.getElementById("weight-log-input").addEventListener("keydown", function (e) {
       if (e.key === "Enter") { e.preventDefault(); handleWeightLog(); }
     });

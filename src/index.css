@@ -1,0 +1,128 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 220 20% 97%;
+    --foreground: 220 25% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 10%;
+    --primary: 174 62% 47%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 220 15% 92%;
+    --secondary-foreground: 220 25% 10%;
+    --muted: 220 15% 94%;
+    --muted-foreground: 220 10% 50%;
+    --accent: 28 90% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 15% 90%;
+    --input: 220 15% 90%;
+    --ring: 174 62% 47%;
+    --radius: 1rem;
+
+    /* Macro colors */
+    --protein: 174 62% 47%;
+    --carbs: 28 90% 55%;
+    --fats: 270 55% 60%;
+
+    /* Custom tokens */
+    --surface: 220 15% 95%;
+    --surface-foreground: 220 25% 10%;
+    --glow-primary: 174 62% 47%;
+    --success: 152 60% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 225 25% 6%;
+    --foreground: 210 20% 92%;
+    --card: 225 20% 9%;
+    --card-foreground: 210 20% 92%;
+    --popover: 225 20% 9%;
+    --popover-foreground: 210 20% 92%;
+    --primary: 174 62% 47%;
+    --primary-foreground: 225 25% 6%;
+    --secondary: 225 18% 14%;
+    --secondary-foreground: 210 20% 92%;
+    --muted: 225 18% 14%;
+    --muted-foreground: 220 10% 55%;
+    --accent: 28 90% 55%;
+    --accent-foreground: 225 25% 6%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 20% 92%;
+    --border: 225 15% 15%;
+    --input: 225 15% 15%;
+    --ring: 174 62% 47%;
+
+    --protein: 174 62% 50%;
+    --carbs: 28 90% 58%;
+    --fats: 270 55% 65%;
+
+    --surface: 225 18% 11%;
+    --surface-foreground: 210 20% 92%;
+    --glow-primary: 174 62% 47%;
+    --success: 152 60% 50%;
+    --success-foreground: 225 25% 6%;
+
+    --sidebar-background: 225 25% 6%;
+    --sidebar-foreground: 210 20% 92%;
+    --sidebar-primary: 174 62% 47%;
+    --sidebar-primary-foreground: 225 25% 6%;
+    --sidebar-accent: 225 18% 14%;
+    --sidebar-accent-foreground: 210 20% 92%;
+    --sidebar-border: 225 15% 15%;
+    --sidebar-ring: 174 62% 47%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+  }
+}
+
+@layer utilities {
+  .font-display {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+  .glow-primary {
+    box-shadow: 0 0 20px hsl(var(--glow-primary) / 0.25),
+                0 0 60px hsl(var(--glow-primary) / 0.1);
+  }
+  .glow-sm {
+    box-shadow: 0 0 10px hsl(var(--glow-primary) / 0.15);
+  }
+  .macro-gradient-protein {
+    background: linear-gradient(135deg, hsl(var(--protein)), hsl(174 62% 35%));
+  }
+  .macro-gradient-carbs {
+    background: linear-gradient(135deg, hsl(var(--carbs)), hsl(28 90% 42%));
+  }
+  .macro-gradient-fats {
+    background: linear-gradient(135deg, hsl(var(--fats)), hsl(270 55% 48%));
+  }
+  .glass {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+}

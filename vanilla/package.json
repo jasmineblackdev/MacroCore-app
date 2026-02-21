@@ -1,0 +1,14 @@
+{
+  "name": "macrocore-vanilla",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:watch": "playwright test --ui",
+    "serve": "serve . -p 8787"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "serve": "^14.2.0"
+  }
+}

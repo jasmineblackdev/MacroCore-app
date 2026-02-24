@@ -1,73 +1,106 @@
-# Welcome to your Lovable project
+#  MacroCore
 
-## Project info
+**MacroCore** is an AI-powered macro nutrition app designed to help users **lose fat, gain muscle, or maintain weight** using personalized, adaptive nutrition plans built around how their body actually works.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+Unlike generic calorie trackers, MacroCore uses **macronutrient intelligence, body data, and AI-assisted analysis** to create meal plans that evolve as the user progresses.
 
-## How can I edit this code?
+---
 
-There are several ways of editing your application.
+##  What MacroCore Does
 
-**Use Lovable**
+MacroCore delivers **precision nutrition** by combining science-backed macro calculations with modern AI insights.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+### Core Capabilities
+- 📊 Personalized macro targets (protein, carbs, fats)
+- ⚖️ Weight loss, weight gain, or maintenance plans
+- 🧬 AI-assisted body analysis to identify fat storage patterns
+- 🍽 Adaptive meal plans that update as progress changes
+- 🌱 Supports omnivore, vegetarian, vegan & pescatarian diets
+- 📈 Weight & progress tracking with trend analysis
 
-Changes made via Lovable will be committed automatically to this repo.
+---
 
-**Use your preferred IDE**
+##  How It Works
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+1. Users input basic body data:
+   - Height, weight, age, gender
+   - Blood type (for tolerance & inflammation awareness)
+2. Select goals:
+   - Fat loss
+   - Muscle gain
+   - Maintenance
+3. Optional AI body scan:
+   - Identifies body type & problem areas
+4. MacroCore generates:
+   - Personalized macros
+   - Dynamic meal plans
+5. Nutrition updates automatically based on:
+   - Weight trends
+   - Plateaus
+   - Body recomposition signals
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+---
 
-Follow these steps:
+##  Key Differentiators
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+✔ Adaptive macros (not static plans)  
+✔ AI body awareness (fat storage & problem areas)  
+✔ Nutrition plans that evolve over time  
+✔ Inclusive eating styles  
+✔ Designed for long-term sustainability  
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
+---
 
-# Step 3: Install the necessary dependencies.
-npm i
+##  Brand & Design
 
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
+- **Brand Name:** MacroCore  
+- **Logo Concept:** Segmented macro plate (protein, carbs, fats)  
+- **Design Focus:** Clean, modern, scalable for mobile  
+- **Primary Colors:** Blue, teal, and amber (macro segmentation)
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+##  Tech Stack (Planned / In Progress)
 
-**Use GitHub Codespaces**
+> _(This section can be updated as development progresses)_
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+- **Frontend:** React Native / Expo
+- **Backend:** Node.js / Firebase / Supabase
+- **AI Services:** Computer vision & data analysis APIs
+- **Design:** Figma
+- **Version Control:** Git & GitHub
 
-## What technologies are used for this project?
+---
 
-This project is built with:
+##  Roadmap
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Phase 1 – MVP
+- Macro calculator
+- Weight tracking
+- Meal plan generator
+- Dietary preference handling
 
-## How can I deploy this project?
+### Phase 2
+- AI body scan insights
+- Adaptive macro updates
+- Grocery lists & meal swaps
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+### Phase 3
+- Integration with fitness apps
+- Coaching dashboard
+- Ecosystem sync with FormIQ
 
-## Can I connect a custom domain to my Lovable project?
+---
 
-Yes, you can!
+##  Vision
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+MacroCore is part of a larger vision to build a **full body-optimization ecosystem**, combining nutrition intelligence with training intelligence.
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+> *Train smarter. Eat smarter. Transform faster.*
+
+---
+##  Screenshots / Preview
+https://core-macro-ai.lovable.app
+---
+
+**MacroCore — Smart macro nutrition built around your core.**

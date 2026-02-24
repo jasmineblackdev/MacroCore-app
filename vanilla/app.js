@@ -984,6 +984,7 @@
     el.classList.add("hidden");
     setTimeout(function () { el.style.display = "none"; }, 300);
     document.getElementById("bottom-nav").style.display = "";
+    window.location.hash = "home";
     handleRoute();
   }
 
@@ -2516,6 +2517,55 @@
   // ══════════════════════════════════════════════════════════
 
   function init() {
+    // iOS WKWebView: position:fixed overlays shrink when keyboard opens because
+    // `bottom: 0` tracks the visual viewport. Lock overlays to the pre-keyboard
+    // screen height via a CSS variable set once at load time.
+    function setScreenHeight() {
+      document.documentElement.style.setProperty('--screen-height', window.innerHeight + 'px');
+    }
+    setScreenHeight();
+    window.addEventListener('orientationchange', function () {
+      setTimeout(setScreenHeight, 300);
+    });
+
+    // Prevent iOS WKWebView from shifting window scroll when keyboard opens.
+    // iOS adjusts UIScrollView contentOffset to bring the focused input above
+    // the keyboard — this registers as window.scrollY changing. We lock it to 0
+    // on every animation frame for the duration of the keyboard open animation.
+    var _scrollLockRAF = null;
+
+    function startScrollLock() {
+      if (_scrollLockRAF) return;
+      var deadline = Date.now() + 600; // cover keyboard animation (~300–500ms)
+      function lock() {
+        window.scrollTo(0, 0);
+        _scrollLockRAF = Date.now() < deadline ? requestAnimationFrame(lock) : null;
+      }
+      _scrollLockRAF = requestAnimationFrame(lock);
+    }
+
+    function stopScrollLock() {
+      if (_scrollLockRAF) { cancelAnimationFrame(_scrollLockRAF); _scrollLockRAF = null; }
+      window.scrollTo({ left: 0, top: 0, behavior: 'instant' });
+    }
+
+    // Start locking as soon as any input inside a fixed overlay is focused,
+    // before iOS has a chance to adjust the scroll position.
+    document.addEventListener('focusin', function (e) {
+      var el = e.target;
+      while (el) {
+        if (el.id === 'auth-overlay' || el.id === 'onboarding') {
+          startScrollLock();
+          return;
+        }
+        el = el.parentElement;
+      }
+    }, true);
+
+    document.addEventListener('focusout', function () {
+      stopScrollLock();
+    }, true);
+
     // Theme
     setTheme(getTheme());
 

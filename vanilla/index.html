@@ -292,66 +292,71 @@
       </header>
 
       <div class="page-content">
-        <div id="adjust-notif"></div>
-        <!-- Calorie Ring -->
-        <div class="calorie-ring-wrap">
-          <button class="calorie-ring-btn" id="calorie-ring-btn">
-            <div style="position:relative;width:13rem;height:13rem">
-              <svg class="calorie-ring-svg" viewBox="0 0 100 100">
-                <circle class="calorie-ring-bg" cx="50" cy="50" r="45"/>
-                <circle class="calorie-ring-progress" id="calorie-ring-circle" cx="50" cy="50" r="45" stroke-dasharray="282.74" stroke-dashoffset="282.74"/>
-              </svg>
-              <div class="calorie-ring-center">
-                <span class="current-cal font-display" id="ring-current">0</span>
-                <span class="target-cal" id="ring-target">of 2,200 cal</span>
+        <div id="adjust-notif" class="home-full-row"></div>
+
+        <!-- Left column: ring -->
+        <div class="home-primary">
+          <div class="calorie-ring-wrap">
+            <button class="calorie-ring-btn" id="calorie-ring-btn">
+              <div style="position:relative;width:13rem;height:13rem">
+                <svg class="calorie-ring-svg" viewBox="0 0 100 100">
+                  <circle class="calorie-ring-bg" cx="50" cy="50" r="45"/>
+                  <circle class="calorie-ring-progress" id="calorie-ring-circle" cx="50" cy="50" r="45" stroke-dasharray="282.74" stroke-dashoffset="282.74"/>
+                </svg>
+                <div class="calorie-ring-center">
+                  <span class="current-cal font-display" id="ring-current">0</span>
+                  <span class="target-cal" id="ring-target">of 2,200 cal</span>
+                </div>
               </div>
-            </div>
-            <div class="remaining-label">
-              <span id="ring-remaining">2,200 cal remaining</span>
-              <svg class="chevron" id="ring-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
-            </div>
-          </button>
-          <div class="macro-breakdown" id="macro-breakdown">
-            <div class="macro-grid">
-              <div class="macro-card">
-                <span class="macro-label protein">Protein</span>
-                <p class="macro-value font-display"><span id="macro-p-cur">0</span><small>/<span id="macro-p-tar">165</span>g</small></p>
-                <div class="macro-bar-track"><div class="macro-bar-fill protein" id="macro-p-bar" style="width:0%"></div></div>
+              <div class="remaining-label">
+                <span id="ring-remaining">2,200 cal remaining</span>
+                <svg class="chevron" id="ring-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
               </div>
-              <div class="macro-card">
-                <span class="macro-label carbs">Carbs</span>
-                <p class="macro-value font-display"><span id="macro-c-cur">0</span><small>/<span id="macro-c-tar">220</span>g</small></p>
-                <div class="macro-bar-track"><div class="macro-bar-fill carbs" id="macro-c-bar" style="width:0%"></div></div>
-              </div>
-              <div class="macro-card">
-                <span class="macro-label fats">Fats</span>
-                <p class="macro-value font-display"><span id="macro-f-cur">0</span><small>/<span id="macro-f-tar">73</span>g</small></p>
-                <div class="macro-bar-track"><div class="macro-bar-fill fats" id="macro-f-bar" style="width:0%"></div></div>
+            </button>
+            <div class="macro-breakdown" id="macro-breakdown">
+              <div class="macro-grid">
+                <div class="macro-card">
+                  <span class="macro-label protein">Protein</span>
+                  <p class="macro-value font-display"><span id="macro-p-cur">0</span><small>/<span id="macro-p-tar">165</span>g</small></p>
+                  <div class="macro-bar-track"><div class="macro-bar-fill protein" id="macro-p-bar" style="width:0%"></div></div>
+                </div>
+                <div class="macro-card">
+                  <span class="macro-label carbs">Carbs</span>
+                  <p class="macro-value font-display"><span id="macro-c-cur">0</span><small>/<span id="macro-c-tar">220</span>g</small></p>
+                  <div class="macro-bar-track"><div class="macro-bar-fill carbs" id="macro-c-bar" style="width:0%"></div></div>
+                </div>
+                <div class="macro-card">
+                  <span class="macro-label fats">Fats</span>
+                  <p class="macro-value font-display"><span id="macro-f-cur">0</span><small>/<span id="macro-f-tar">73</span>g</small></p>
+                  <div class="macro-bar-track"><div class="macro-bar-fill fats" id="macro-f-bar" style="width:0%"></div></div>
+                </div>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Weekly Progress -->
-        <div class="card" id="weekly-progress-card">
-          <div class="flex-between" style="margin-bottom:1rem">
-            <div>
-              <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--muted-foreground))">This Week</h3>
-              <p style="font-size:1.5rem;font-weight:700;color:hsl(var(--foreground))" class="font-display">
-                <span id="weekly-avg">181.5</span>
-                <span style="font-size:0.875rem;font-weight:400;color:hsl(var(--muted-foreground))">lbs avg</span>
-              </p>
+        <!-- Right column: weekly progress -->
+        <div class="home-secondary">
+          <div class="card" id="weekly-progress-card">
+            <div class="flex-between" style="margin-bottom:1rem">
+              <div>
+                <h3 style="font-size:0.875rem;font-weight:500;color:hsl(var(--muted-foreground))">This Week</h3>
+                <p style="font-size:1.5rem;font-weight:700;color:hsl(var(--foreground))" class="font-display">
+                  <span id="weekly-avg">181.5</span>
+                  <span style="font-size:0.875rem;font-weight:400;color:hsl(var(--muted-foreground))">lbs avg</span>
+                </p>
+              </div>
+              <div class="trend-badge" id="weekly-trend-badge">
+                <svg id="trend-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
+                <span id="trend-label">On track</span>
+              </div>
             </div>
-            <div class="trend-badge" id="weekly-trend-badge">
-              <svg id="trend-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/></svg>
-              <span id="trend-label">On track</span>
-            </div>
+            <div class="chart-container" id="weekly-chart"></div>
           </div>
-          <div class="chart-container" id="weekly-chart"></div>
         </div>
 
-        <!-- Today's Meals -->
-        <div>
+        <!-- Today's Meals — full width row -->
+        <div class="home-full-row">
           <h2 class="section-label">Today's Meals</h2>
           <div id="today-log"></div>
         </div>
@@ -517,6 +522,11 @@
     <!-- ========== BOTTOM NAV ========== -->
     <nav class="bottom-nav" id="bottom-nav" style="display:none">
       <div class="bottom-nav-inner">
+        <!-- Brand mark — visible in tablet sidebar only -->
+        <div class="nav-brand">
+          <img src="logo.png" alt="MacroCore" class="nav-brand-logo">
+          <span class="nav-brand-name font-display">MacroCore</span>
+        </div>
         <button class="nav-item active" data-page="home">
           <div class="nav-icon-wrap">
             <div class="nav-indicator"></div>

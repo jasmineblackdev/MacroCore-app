@@ -5,11 +5,10 @@ const config: CapacitorConfig = {
   appName: 'MacroCore',
   webDir: 'vanilla',
   ios: {
-    contentInset: 'always',
+    contentInset: 'never',
     backgroundColor: '#111111',
-    preferredContentMode: 'mobile',
     scrollEnabled: false,
-  }
+  },
 };
 
 export default config;

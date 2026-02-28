@@ -1939,11 +1939,15 @@ svg {
   width: 100%;
   max-width: 480px;
   height: var(--screen-height, 100vh);
-  overflow: hidden;
+  /* overflow-y:auto + align-items:flex-start lets the form scroll when the
+     iPad/iPhone keyboard appears so the Sign Up button stays reachable.
+     The .auth-modal margin:auto preserves vertical centering when no keyboard. */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: hsl(var(--background));
   z-index: 200;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   padding: calc(1.25rem + env(safe-area-inset-top, 0px)) 1.25rem calc(1.25rem + env(safe-area-inset-bottom, 0px));
   animation: fadeIn 0.3s ease;
@@ -1956,10 +1960,15 @@ svg {
 .auth-modal {
   width: 100%;
   max-width: 24rem;
+  /* margin:auto centers when content fits; ignored when overflow kicks in */
+  margin: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
+  /* Extra bottom padding so the form breathes above the software keyboard
+     on iPhone SE / iPad landscape — at minimum 3rem, more on tall screens. */
+  padding-bottom: max(3rem, env(safe-area-inset-bottom, 1rem));
 }
 
 .auth-modal h2 {

@@ -36,11 +36,13 @@
         <form id="auth-form" class="auth-form">
           <div>
             <label class="label">Email</label>
-            <input type="email" class="input" id="auth-email" placeholder="you@example.com" required>
+            <input type="email" class="input" id="auth-email" placeholder="you@example.com" required
+                   autocomplete="email" autocorrect="off" autocapitalize="none" spellcheck="false">
           </div>
           <div>
             <label class="label">Password</label>
-            <input type="password" class="input" id="auth-password" placeholder="Min 6 characters" required minlength="6">
+            <input type="password" class="input" id="auth-password" placeholder="Min 6 characters" required minlength="6"
+                   autocomplete="current-password">
           </div>
           <button type="submit" class="btn btn-primary" id="auth-submit" style="width:100%">Sign In</button>
         </form>

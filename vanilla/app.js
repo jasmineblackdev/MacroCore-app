@@ -333,6 +333,9 @@
     document.getElementById("auth-toggle-btn").textContent =
       authMode === "signin" ? "Sign Up" : "Sign In";
     document.getElementById("auth-error").style.display = "none";
+    // Keep password manager hints in sync with the current mode.
+    var pwdInput = document.getElementById("auth-password");
+    if (pwdInput) pwdInput.setAttribute("autocomplete", authMode === "signup" ? "new-password" : "current-password");
   }
 
   function showAuthError(msg) {
@@ -531,6 +534,9 @@
     document.getElementById("auth-submit").textContent = isSignUp ? "Sign Up" : "Sign In";
     document.getElementById("auth-toggle-text").textContent = isSignUp ? "Already have an account?" : "Don't have an account?";
     document.getElementById("auth-toggle-btn").textContent = isSignUp ? "Sign In" : "Sign Up";
+    // Help password managers distinguish new account creation from login.
+    var pwdInput = document.getElementById("auth-password");
+    if (pwdInput) pwdInput.setAttribute("autocomplete", isSignUp ? "new-password" : "current-password");
   }
 
   async function handleSignOut() {

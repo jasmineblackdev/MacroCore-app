@@ -229,6 +229,10 @@
     try { return JSON.parse(localStorage.getItem("mc_is_pro") || "false"); } catch (_) { return false; }
   }());
 
+  var freeGensUsed = (function () {
+    try { return parseInt(localStorage.getItem("mc_free_gens_used") || "0", 10) || 0; } catch (_) { return 0; }
+  }());
+
   function setProUser(value) {
     isProUser = !!value;
     try { localStorage.setItem("mc_is_pro", JSON.stringify(isProUser)); } catch (_) {}
@@ -1990,11 +1994,11 @@
     var archiveBtn = document.createElement("button");
     archiveBtn.className = "archive-btn";
     archiveBtn.id = "btn-archive-plan";
-    archiveBtn.setAttribute("aria-label", "Archive this meal plan");
+    archiveBtn.setAttribute("aria-label", "Save this meal plan");
     var alreadySaved = isCurrentPlanArchived();
     archiveBtn.innerHTML =
       '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>' +
-      (alreadySaved ? "Saved to Archive" : "Archive Plan");
+      (alreadySaved ? "Saved \u2713" : "Save Plan");
     if (alreadySaved) archiveBtn.classList.add("saved");
     archiveBtn.addEventListener("click", function () { haptic("Light"); archiveCurrentPlan(archiveBtn); });
     el.appendChild(archiveBtn);
@@ -2013,15 +2017,20 @@
   // Returns true on success, false if localStorage quota was exceeded.
   function saveArchivedPlans(plans) {
     var ok = cacheSet("archived_plans", plans);
-    updateArchiveBadge();
+    updateSavedTabCount();
     return ok;
   }
 
-  function updateArchiveBadge() {
-    var badge = document.getElementById("archive-badge");
-    if (!badge) return;
+  function updateSavedTabCount() {
+    var countEl = document.getElementById("saved-tab-count");
+    if (!countEl) return;
     var count = getArchivedPlans().length;
-    badge.style.display = count > 0 ? "block" : "none";
+    if (count > 0) {
+      countEl.textContent = count;
+      countEl.classList.remove("hidden");
+    } else {
+      countEl.classList.add("hidden");
+    }
   }
 
   function isCurrentPlanArchived() {
@@ -2099,9 +2108,12 @@
 
     if (btn) {
       btn.innerHTML =
-        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Saved to Archive';
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Saved \u2713';
       btn.classList.add("saved");
     }
+
+    showToast("Plan saved!");
+    setTimeout(function () { switchMealTab("saved"); }, 600);
 
     // Optional Supabase sync
     syncArchivedPlanToSupabase(plan);
@@ -2133,20 +2145,29 @@
 
   // ── Archive overlay UI ────────────────────────────────────
 
+  var mealTab = "generate"; // "generate" | "saved"
   var archiveSearchQuery = "";
   var archiveActiveTag = null;
   var archiveDetailPlanId = null;
 
-  function openArchive() {
-    archiveSearchQuery = "";
-    archiveActiveTag = null;
-    document.getElementById("archive-search").value = "";
-    renderArchiveList();
-    document.getElementById("archive-overlay").classList.remove("hidden");
-  }
-
-  function closeArchive() {
-    document.getElementById("archive-overlay").classList.add("hidden");
+  function switchMealTab(tab) {
+    mealTab = tab;
+    var isGenerate = tab === "generate";
+    document.getElementById("meals-generate-panel").classList.toggle("hidden", !isGenerate);
+    document.getElementById("meals-saved-panel").classList.toggle("hidden", isGenerate);
+    var tabGen = document.getElementById("tab-generate");
+    var tabSaved = document.getElementById("tab-saved");
+    tabGen.classList.toggle("pill-tab-active", isGenerate);
+    tabGen.setAttribute("aria-selected", String(isGenerate));
+    tabSaved.classList.toggle("pill-tab-active", !isGenerate);
+    tabSaved.setAttribute("aria-selected", String(!isGenerate));
+    if (!isGenerate) {
+      archiveSearchQuery = "";
+      archiveActiveTag = null;
+      var searchEl = document.getElementById("archive-search");
+      if (searchEl) searchEl.value = "";
+      renderArchiveList();
+    }
   }
 
   function openArchiveDetail(id) {
@@ -2241,7 +2262,7 @@
     if (plans.length === 0) {
       listEl.innerHTML = '<div class="archive-empty">' +
         '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 0.75rem"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>' +
-        '<p>' + (q || archiveActiveTag ? "No plans match your search." : "No saved plans yet.<br>Generate a meal plan and tap <strong>Archive Plan</strong> to save it here.") + '</p>' +
+        '<p>' + (q || archiveActiveTag ? "No plans match your search." : "No saved plans yet.<br>Generate a meal plan and tap <strong>Save Plan</strong> to save it here.") + '</p>' +
         '</div>';
       return;
     }
@@ -2274,9 +2295,10 @@
 
   async function generateMealPlan() {
     // ── Entitlement gate ─────────────────────────────────────
-    if (!isProUser) {
-      console.log("[Purchase] Generate tapped — not Pro. Presenting paywall.");
+    if (!isProUser && freeGensUsed >= 1) {
+      console.log("[Purchase] Free gen used. Presenting paywall.");
       haptic("Medium");
+      showToast("You\u2019ve used your free plan \u2014 upgrade to keep generating.");
       var result = await PurchaseManager.presentPaywall();
       if (!result.isPro) return; // still not Pro after paywall dismissed
     }
@@ -2374,6 +2396,13 @@
 
       cacheMealPlan();
       saveMealPlanToSupabase(prefs);
+      if (!isProUser) {
+        freeGensUsed++;
+        try { localStorage.setItem("mc_free_gens_used", String(freeGensUsed)); } catch (_) {}
+        if (freeGensUsed === 1) {
+          showToast("1 free plan generated \u2014 save it before generating another!");
+        }
+      }
     } catch (e) {
       clearTimeout(genTimeoutHandle);
       console.error("[MacroCore AI] Error:", e.message);
@@ -3222,7 +3251,7 @@
       checkWeeklyAutoAdjust();
       initReminders();
       initNetworkMonitoring();
-      updateArchiveBadge();
+      updateSavedTabCount();
       // Refresh entitlement from RevenueCat (fire-and-forget; cached value used first).
       PurchaseManager.refreshEntitlements();
       PurchaseManager.initListener();
@@ -3460,12 +3489,11 @@
       if (res.isPro) closeWebPaywall(true);
     });
 
-    // Archive overlay
-    document.getElementById("btn-open-archive").addEventListener("click", function () { haptic("Light"); openArchive(); });
-    document.getElementById("btn-close-archive").addEventListener("click", closeArchive);
-    document.getElementById("archive-overlay").addEventListener("click", function (e) {
-      if (e.target === document.getElementById("archive-overlay")) closeArchive();
-    });
+    // Meals pill toggle
+    document.getElementById("tab-generate").addEventListener("click", function () { switchMealTab("generate"); });
+    document.getElementById("tab-saved").addEventListener("click", function () { haptic("Light"); switchMealTab("saved"); });
+
+    // Archive (inline saved panel)
     document.getElementById("archive-search").addEventListener("input", function (e) {
       archiveSearchQuery = e.target.value;
       renderArchiveList();

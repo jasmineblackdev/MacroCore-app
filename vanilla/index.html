@@ -371,8 +371,16 @@
     <!-- ========== MEALS PAGE ========== -->
     <div class="page" id="page-meals">
       <header class="page-header">
-        <h1 class="font-display">AI Meal Planner</h1>
-        <p id="meals-macro-summary"></p>
+        <div class="header-row">
+          <div>
+            <h1 class="font-display">AI Meal Planner</h1>
+            <p id="meals-macro-summary"></p>
+          </div>
+          <button class="btn btn-ghost" id="btn-open-archive" style="padding:0.5rem;position:relative" aria-label="Saved plans">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>
+            <span id="archive-badge" style="display:none;position:absolute;top:4px;right:4px;width:8px;height:8px;border-radius:50%;background:hsl(var(--primary))"></span>
+          </button>
+        </div>
       </header>
       <div class="page-content">
         <div style="display:flex;flex-direction:column;gap:0.75rem">
@@ -517,6 +525,114 @@
     <div class="settings-panel-overlay" id="settings-overlay"></div>
     <div class="settings-panel" id="settings-panel">
       <div class="settings-panel-content" id="settings-panel-content"></div>
+    </div>
+
+    <!-- ========== TOAST ========== -->
+    <div id="toast-msg" class="toast-msg" role="status" aria-live="polite"></div>
+
+    <!-- ========== WEB PAYWALL OVERLAY ========== -->
+    <!-- Shown only when the native RevenueCatUI bridge is unavailable.         -->
+    <!-- On device the native PaywallViewController sheet is shown instead.     -->
+    <div class="paywall-overlay hidden" id="paywall-overlay" role="dialog" aria-modal="true" aria-labelledby="paywall-title">
+      <div class="paywall-sheet">
+        <!-- Close — must always be present per App Review guideline 3.1.1 -->
+        <button class="btn btn-ghost paywall-close-btn" id="btn-paywall-close" aria-label="Close">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>
+
+        <!-- Hero -->
+        <div class="paywall-hero">
+          <div class="paywall-icon-ring">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>
+          </div>
+          <h2 class="font-display paywall-title" id="paywall-title">MacroCore Pro</h2>
+          <p class="paywall-subtitle">AI-powered meal plans personalised to your exact macro targets.</p>
+        </div>
+
+        <!-- Features -->
+        <ul class="paywall-features">
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Unlimited AI meal plan generation
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Macro-matched plans (protein, carbs, fat, calories)
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Allergy & preference filtering
+          </li>
+          <li>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Archive &amp; re-use your favourite plans
+          </li>
+        </ul>
+
+        <!-- Pricing — populated by JS from RevenueCat offerings -->
+        <div id="paywall-pricing" class="paywall-pricing">
+          <!-- Skeleton until offerings load -->
+          <div class="paywall-price-skeleton"></div>
+        </div>
+
+        <!-- CTA — populated by JS -->
+        <div id="paywall-cta-wrap" class="paywall-cta-wrap">
+          <button class="btn btn-primary paywall-cta" id="btn-paywall-subscribe" style="width:100%;font-size:1rem;padding:1rem">
+            Loading…
+          </button>
+        </div>
+
+        <!-- Legal / restore — required by App Store guidelines -->
+        <p class="paywall-legal">
+          Subscription auto-renews unless cancelled 24 hours before end of period.
+          Manage in Settings&nbsp;→&nbsp;Apple&nbsp;ID.
+        </p>
+        <button class="btn-link paywall-restore" id="btn-paywall-restore">
+          Restore Purchases
+        </button>
+        <p class="paywall-legal" style="margin-top:0.5rem">
+          <a class="btn-link" href="https://macrocore.io/privacy" target="_blank" rel="noopener">Privacy</a>
+          &nbsp;·&nbsp;
+          <a class="btn-link" href="https://macrocore.io/terms" target="_blank" rel="noopener">Terms</a>
+        </p>
+      </div>
+    </div>
+
+    <!-- ========== ARCHIVE OVERLAY ========== -->
+    <div class="archive-overlay hidden" id="archive-overlay">
+      <div class="archive-panel">
+        <div class="archive-panel-header">
+          <button class="btn btn-ghost" id="btn-close-archive" aria-label="Close" style="padding:0.5rem">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+          <h2 class="font-display" style="font-size:1.125rem;font-weight:700;flex:1;text-align:center">Saved Plans</h2>
+          <div style="width:36px"></div><!-- spacer -->
+        </div>
+
+        <div style="padding:0 1rem 0.75rem">
+          <input type="text" class="input" id="archive-search" placeholder="Search plans..." style="width:100%;box-sizing:border-box">
+        </div>
+
+        <div id="archive-tag-filters" style="display:flex;flex-wrap:wrap;gap:0.375rem;padding:0 1rem 0.75rem"></div>
+
+        <div id="archive-list" style="flex:1;overflow-y:auto;padding:0 1rem 1rem"></div>
+      </div>
+    </div>
+
+    <!-- ========== ARCHIVE DETAIL OVERLAY ========== -->
+    <div class="archive-overlay hidden" id="archive-detail-overlay">
+      <div class="archive-panel">
+        <div class="archive-panel-header">
+          <button class="btn btn-ghost" id="btn-close-archive-detail" aria-label="Close" style="padding:0.5rem">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+          </button>
+          <h2 class="font-display" id="archive-detail-title" style="font-size:1rem;font-weight:700;flex:1;text-align:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></h2>
+          <button class="btn btn-ghost" id="btn-archive-detail-delete" aria-label="Delete plan" style="padding:0.5rem;color:hsl(var(--destructive))">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+          </button>
+        </div>
+        <div id="archive-detail-content" style="flex:1;overflow-y:auto;padding:1rem"></div>
+      </div>
     </div>
 
     <!-- ========== BOTTOM NAV ========== -->

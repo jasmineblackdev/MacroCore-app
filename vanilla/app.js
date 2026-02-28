@@ -41,10 +41,15 @@
   // CACHE LAYER (localStorage)
   // ══════════════════════════════════════════════════════════
 
+  // Returns true on success, false on quota/serialisation failure.
   function cacheSet(key, data) {
     try {
       localStorage.setItem("mc_" + key, JSON.stringify({ data: data, ts: Date.now() }));
-    } catch (_) { /* quota exceeded — silently fail */ }
+      return true;
+    } catch (e) {
+      console.warn("[MacroCore Cache] cacheSet failed for key '" + key + "':", e.name, e.message);
+      return false;
+    }
   }
 
   function cacheGet(key) {
@@ -90,6 +95,104 @@
     } catch (_) {}
   }
 
+  // ══════════════════════════════════════════════════════════
+  // PURCHASE MANAGER (JS)
+  // Thin wrapper around the native PaywallPlugin Capacitor bridge.
+  // Falls back gracefully when running in a browser / bridge unavailable.
+  // ══════════════════════════════════════════════════════════
+
+  var PurchaseManager = (function () {
+    // Capacitor v8: plugins are accessed via window.Capacitor.Plugins
+    function getPlugin() {
+      return (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Paywall) || null;
+    }
+
+    return {
+      // Called at app start and on foreground. Resolves quickly from native cache.
+      async refreshEntitlements() {
+        var plugin = getPlugin();
+        if (!plugin) return; // browser / no native bridge — keep cached value
+        try {
+          var res = await plugin.getEntitlementStatus();
+          console.log("[Purchase] entitlement refresh → isPro:", res.isPro);
+          setProUser(res.isPro);
+        } catch (err) {
+          console.warn("[Purchase] refreshEntitlements failed (non-fatal):", err.message);
+        }
+      },
+
+      // Presents the native RevenueCatUI paywall sheet.
+      // Returns { isPro, purchased }.
+      async presentPaywall() {
+        var plugin = getPlugin();
+        if (!plugin) {
+          // Fallback: show the in-app web paywall overlay.
+          return new Promise(function (resolve) {
+            openWebPaywall(function (result) { resolve(result); });
+          });
+        }
+        try {
+          var res = await plugin.presentPaywall();
+          if (res.isPro !== undefined) setProUser(res.isPro);
+          return res;
+        } catch (err) {
+          console.error("[Purchase] presentPaywall error:", err.message);
+          // Non-fatal — user dismissed or cancelled; return current state.
+          return { isPro: isProUser, purchased: false };
+        }
+      },
+
+      // Triggers StoreKit restore through the native layer.
+      async restorePurchases() {
+        var plugin = getPlugin();
+        if (!plugin) {
+          showToast("Restore is only available on device.");
+          return { isPro: isProUser };
+        }
+        try {
+          var res = await plugin.restorePurchases();
+          setProUser(res.isPro);
+          // Distinct messaging for each restore outcome.
+          if (res.restoreResult === "alreadyActive") {
+            showToast("You\u2019re already subscribed to MacroCore Pro.");
+          } else if (res.isPro) {
+            showToast("Pro access restored!");
+          } else {
+            showToast("No active subscription found for this Apple\u00A0ID.");
+          }
+          return res;
+        } catch (err) {
+          console.error("[Purchase] restorePurchases error:", err.message);
+          showToast("Restore failed: " + (err.message || "Please try again."));
+          return { isPro: false };
+        }
+      },
+
+      // Listen for entitlement changes fired by the native layer (e.g. after
+      // a background purchase or subscription renewal).
+      initListener() {
+        var plugin = getPlugin();
+        if (!plugin) return;
+        try {
+          plugin.addListener("entitlementChanged", function (data) {
+            console.log("[Purchase] entitlementChanged event →", data);
+            setProUser(data.isPro);
+          });
+        } catch (_) {}
+      },
+    };
+  }());
+
+  // Simple toast for purchase feedback (reuses auth-error pattern).
+  function showToast(msg, durationMs) {
+    var el = document.getElementById("toast-msg");
+    if (!el) return;
+    el.textContent = msg;
+    el.classList.add("visible");
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(function () { el.classList.remove("visible"); }, durationMs || 3000);
+  }
+
   // Native share sheet with Web Share API fallback
   async function shareProgress() {
     var today = todayStr();
@@ -118,6 +221,19 @@
   // ── State ────────────────────────────────────────────────
   let currentUser = null;
   let guestMode = false;
+
+  // ── Pro entitlement (persisted in localStorage as mc_is_pro) ──
+  // Bootstrapped from cache so the gate renders correctly before the
+  // first RevenueCat network round-trip completes.
+  let isProUser = (function () {
+    try { return JSON.parse(localStorage.getItem("mc_is_pro") || "false"); } catch (_) { return false; }
+  }());
+
+  function setProUser(value) {
+    isProUser = !!value;
+    try { localStorage.setItem("mc_is_pro", JSON.stringify(isProUser)); } catch (_) {}
+    updateGenerateButton();
+  }
   let profile = { ...DEFAULT_PROFILE };
   let foodEntries = [];
   let weightLogs = []; // { date, weight }
@@ -225,48 +341,112 @@
 
   async function handleAuthSubmit(e) {
     e.preventDefault();
-    const email = document.getElementById("auth-email").value.trim();
-    const password = document.getElementById("auth-password").value;
-    const btn = document.getElementById("auth-submit");
+    var email = document.getElementById("auth-email").value.trim();
+    var password = document.getElementById("auth-password").value;
+    var btn = document.getElementById("auth-submit");
+    var mode = authMode; // capture before any async mutation
+    var diagStart = Date.now();
+
     btn.disabled = true;
-    btn.textContent = authMode === "signin" ? "Signing in..." : "Creating account...";
+    btn.textContent = mode === "signin" ? "Signing in..." : "Creating account...";
     document.getElementById("auth-error").style.display = "none";
 
+    console.log("[MacroCore Auth] Starting " + mode + " at " + new Date().toISOString());
+
+    // ── Pre-flight: network reachability ─────────────────────
+    if (_Plugins.Network) {
+      try {
+        var netStatus = await _Plugins.Network.getStatus();
+        console.log("[MacroCore Auth] Network connected:", netStatus.connected, "type:", netStatus.connectionType);
+        if (!netStatus.connected) {
+          showAuthError("No internet connection. Please check your network and try again.");
+          btn.disabled = false;
+          btn.textContent = mode === "signin" ? "Sign In" : "Sign Up";
+          return;
+        }
+      } catch (netErr) {
+        console.warn("[MacroCore Auth] Network check failed (non-fatal):", netErr.message);
+      }
+    }
+
+    // ── 15-second timeout guard ───────────────────────────────
+    var didTimeout = false;
+    var timeoutHandle;
+    var timeoutPromise = new Promise(function (_, reject) {
+      timeoutHandle = setTimeout(function () {
+        didTimeout = true;
+        reject(new Error("Connection timed out. Please check your network and try again."));
+      }, 15000);
+    });
+
     try {
-      let result;
-      if (authMode === "signup") {
-        result = await supabase.auth.signUp({ email: email, password: password });
-        if (result.error) throw result.error;
-        // Check if email confirmation is required
+      var result;
+      if (mode === "signup") {
+        console.log("[MacroCore Auth] Calling supabase.auth.signUp...");
+        result = await Promise.race([
+          supabase.auth.signUp({ email: email, password: password }),
+          timeoutPromise
+        ]);
+        clearTimeout(timeoutHandle);
+
+        console.log("[MacroCore Auth] signUp response — status:", result.error ? "ERROR" : "OK",
+          "| user:", !!result.data?.user, "| session:", !!result.data?.session,
+          "| error:", result.error ? result.error.message : "none",
+          "| elapsed:", (Date.now() - diagStart) + "ms");
+
+        if (result.error) throw new Error(mapAuthError(result.error));
+        // Guard: Supabase occasionally returns a 200 with a non-JSON body (CDN
+        // hiccup, maintenance page) that the SDK surfaces as result.data === null.
+        if (!result.data || typeof result.data !== "object") {
+          throw new Error("Unexpected response from server. Please try again.");
+        }
+
         if (result.data.user && !result.data.session) {
-          // Email confirmation needed — auto sign in instead
-          // (Supabase created the user but requires confirmation)
-          // Try signing in directly in case confirm is disabled
+          // Supabase created the user but email confirmation is required.
+          // Attempt an immediate sign-in — succeeds when "Confirm email" is OFF.
+          console.log("[MacroCore Auth] No session after signUp — attempting immediate signIn...");
           var signInResult = await supabase.auth.signInWithPassword({ email: email, password: password });
+          console.log("[MacroCore Auth] Immediate signIn:", signInResult.error ? signInResult.error.message : "OK");
+
           if (signInResult.error) {
-            // Confirmation IS required — show message and switch to sign-in mode
-            showAuthSuccess("Account created! Check your email to confirm, then sign in.");
+            // Email confirmation IS required. Tell the user clearly and switch to sign-in mode.
+            showAuthSuccess(
+              "Account created! Check your inbox for a confirmation email, then come back and sign in."
+            );
             btn.disabled = false;
-            // Directly set sign-in mode (don't use toggleAuthMode which would flip it)
-            authMode = "signin";
-            document.getElementById("auth-title").textContent = "Welcome to MacroCore";
-            document.getElementById("auth-subtitle").textContent = "Sign in to sync your data across devices";
             btn.textContent = "Sign In";
-            document.getElementById("auth-toggle-text").textContent = "Don't have an account?";
-            document.getElementById("auth-toggle-btn").textContent = "Sign Up";
+            applyAuthModeUI("signin");
             return;
           }
-          // If sign-in worked, onAuthStateChange will handle the rest
+          // signInResult.data.session set — onAuthStateChange fires next
         }
+        // If result.data.session is already set (confirm disabled), onAuthStateChange fires.
+
       } else {
-        result = await supabase.auth.signInWithPassword({ email: email, password: password });
-        if (result.error) throw result.error;
+        // Sign-in path
+        console.log("[MacroCore Auth] Calling supabase.auth.signInWithPassword...");
+        result = await Promise.race([
+          supabase.auth.signInWithPassword({ email: email, password: password }),
+          timeoutPromise
+        ]);
+        clearTimeout(timeoutHandle);
+
+        console.log("[MacroCore Auth] signIn response — status:", result.error ? "ERROR" : "OK",
+          "| error:", result.error ? result.error.message : "none",
+          "| elapsed:", (Date.now() - diagStart) + "ms");
+
+        if (result.error) throw new Error(mapAuthError(result.error));
       }
-      // onAuthStateChange will handle the rest
+
+      console.log("[MacroCore Auth] Auth completed in", (Date.now() - diagStart) + "ms");
+      // onAuthStateChange handles app boot from here
+
     } catch (err) {
-      showAuthError(err.message || "Authentication failed");
+      clearTimeout(timeoutHandle);
+      console.error("[MacroCore Auth] Error after", (Date.now() - diagStart) + "ms:", err.message);
+      showAuthError(err.message || "Authentication failed. Please try again.");
       btn.disabled = false;
-      btn.textContent = authMode === "signin" ? "Sign In" : "Sign Up";
+      btn.textContent = mode === "signin" ? "Sign In" : "Sign Up";
     }
   }
 
@@ -276,6 +456,77 @@
     el.style.display = "block";
     el.style.background = "hsl(var(--success) / 0.1)";
     el.style.color = "hsl(var(--success))";
+  }
+
+  // Maps raw Supabase/network errors to actionable user-facing messages.
+  // KEEP IN SYNC with src/lib/authUtils.ts (tested there).
+  function mapAuthError(error) {
+    // Guard: non-object or null error — shouldn't happen but protects against
+    // malformed/non-JSON Supabase responses that arrive as bare strings.
+    if (!error || typeof error !== "object") {
+      return typeof error === "string" && error.length < 200
+        ? error
+        : "Authentication failed. Please try again.";
+    }
+    var msg = (error.message || "").toLowerCase();
+    var status = error.status || (error.context && error.context.status) || 0;
+
+    // Network / connectivity
+    if (msg.includes("fetch") || msg.includes("network") || msg.includes("failed to fetch") || msg.includes("load failed") || msg.includes("networkrequesterror")) {
+      return "Unable to connect. Please check your internet connection and try again.";
+    }
+    // Timeout (our guard + Supabase SDK timeout strings)
+    if (msg.includes("timed out") || msg.includes("timeout")) {
+      return "Connection timed out. Please check your network and try again.";
+    }
+    // Server unavailable / maintenance
+    if (status === 503 || msg.includes("service unavailable") || msg.includes("maintenance")) {
+      return "MacroCore is temporarily unavailable. Please try again in a few minutes.";
+    }
+    // Rate limiting
+    if (status === 429 || msg.includes("rate limit") || msg.includes("too many requests")) {
+      return "Too many attempts. Please wait a minute and try again.";
+    }
+    // Email not confirmed
+    if (msg.includes("email not confirmed")) {
+      return "Please confirm your email first — check your inbox, then sign in here.";
+    }
+    // Invalid credentials
+    if (msg.includes("invalid login credentials") || msg.includes("invalid credentials") || msg.includes("invalid email or password")) {
+      return "Incorrect email or password. Please check your details and try again.";
+    }
+    // Duplicate email
+    if (msg.includes("user already registered") || msg.includes("already been registered") || msg.includes("already exists")) {
+      return "An account with this email already exists. Please sign in instead.";
+    }
+    // Weak password
+    if (msg.includes("password should be at least") || (msg.includes("password") && msg.includes("characters"))) {
+      return "Password must be at least 6 characters.";
+    }
+    // Invalid email format
+    if (msg.includes("unable to validate email") || (msg.includes("invalid") && msg.includes("email"))) {
+      return "Please enter a valid email address.";
+    }
+    // Signups disabled
+    if (msg.includes("signup is disabled") || msg.includes("signups not allowed")) {
+      return "Account creation is temporarily unavailable. Please try again later.";
+    }
+    // Catch-all: surface the raw message if short enough to be user-readable,
+    // otherwise show a generic message (avoids leaking internal SDK strings).
+    return (error.message && error.message.length < 120)
+      ? error.message
+      : "Authentication failed. Please try again.";
+  }
+
+  // Updates auth UI chrome without toggling — safe to call mid-flow
+  function applyAuthModeUI(mode) {
+    authMode = mode;
+    var isSignUp = mode === "signup";
+    document.getElementById("auth-title").textContent = isSignUp ? "Create Account" : "Welcome to MacroCore";
+    document.getElementById("auth-subtitle").textContent = isSignUp ? "Sign up to get started" : "Sign in to sync your data across devices";
+    document.getElementById("auth-submit").textContent = isSignUp ? "Sign Up" : "Sign In";
+    document.getElementById("auth-toggle-text").textContent = isSignUp ? "Already have an account?" : "Don't have an account?";
+    document.getElementById("auth-toggle-btn").textContent = isSignUp ? "Sign In" : "Sign Up";
   }
 
   async function handleSignOut() {
@@ -1455,7 +1706,101 @@
       profile.calories + " cal · " + profile.protein + "g P · " + profile.carbs + "g C · " + profile.fats + "g F";
     renderExclusionTags();
     renderMealPlanOutput();
+    updateGenerateButton();
   }
+
+  // Updates the generate button to reflect current entitlement.
+  // Called after any isPro change so the UI always matches state.
+  function updateGenerateButton() {
+    var btn = document.getElementById("btn-generate-meal");
+    if (!btn) return;
+    if (isProUser) {
+      btn.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></svg>' +
+        "Generate Meal Plan";
+      btn.removeAttribute("data-locked");
+    } else {
+      btn.innerHTML =
+        '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' +
+        "\u00A0Pro \u2014 Generate Meal Plan";
+      btn.setAttribute("data-locked", "1");
+    }
+  }
+
+  // ── Web paywall fallback ──────────────────────────────────
+  // Shown only when the native Capacitor bridge is unavailable
+  // (e.g. dev browser, Simulator without StoreKit config, or RC offline).
+  var _webPaywallResolve = null;
+
+  function openWebPaywall(resolve) {
+    _webPaywallResolve = resolve;
+    document.getElementById("paywall-overlay").classList.remove("hidden");
+  }
+
+  function closeWebPaywall(purchased) {
+    document.getElementById("paywall-overlay").classList.add("hidden");
+    if (_webPaywallResolve) {
+      _webPaywallResolve({ isPro: isProUser, purchased: !!purchased });
+      _webPaywallResolve = null;
+    }
+  }
+
+  // Populates the pricing card and CTA button from RevenueCat offerings.
+  // Runs when the web paywall becomes visible.
+  async function loadWebPaywallOfferings() {
+    var plugin = window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.Paywall;
+    var pricingEl = document.getElementById("paywall-pricing");
+    var ctaBtn = document.getElementById("btn-paywall-subscribe");
+    if (!plugin || !pricingEl || !ctaBtn) return;
+
+    try {
+      var res = await plugin.getOfferings(); // custom call; see PaywallPlugin.swift
+      var pkgs = (res && res.packages) || [];
+      var pkg = pkgs[0]; // use first package from default offering
+
+      if (pkg) {
+        pricingEl.innerHTML =
+          '<div class="paywall-price-card">' +
+          (pkgs.length === 1 ? '<span class="paywall-price-badge">Most Popular</span>' : '') +
+          '<p class="price-label">' + esc(pkg.title || "Pro") + '</p>' +
+          '<p><span class="price-amount">' + esc(pkg.localizedPriceString) + '</span>' +
+          '<span class="price-period"> / ' + (pkg.subscriptionPeriod || "month") + '</span></p>' +
+          '</div>';
+
+        ctaBtn.textContent = "Subscribe for " + pkg.localizedPriceString;
+        ctaBtn.onclick = async function () {
+          ctaBtn.disabled = true;
+          ctaBtn.textContent = "Processing…";
+          try {
+            var purchaseRes = await plugin.purchase({ packageIdentifier: pkg.identifier });
+            if (purchaseRes.isPro !== undefined) setProUser(purchaseRes.isPro);
+            if (purchaseRes.isPro) closeWebPaywall(true);
+          } catch (err) {
+            showToast(err.message || "Purchase failed. Please try again.");
+          } finally {
+            ctaBtn.disabled = false;
+            ctaBtn.textContent = "Subscribe for " + pkg.localizedPriceString;
+          }
+        };
+      } else {
+        pricingEl.innerHTML = '<p style="color:hsl(var(--muted-foreground));font-size:0.875rem">Pricing unavailable. Please try again.</p>';
+        ctaBtn.textContent = "Try Again";
+        ctaBtn.onclick = function () { loadWebPaywallOfferings(); };
+      }
+    } catch (err) {
+      console.warn("[Paywall] Could not load offerings:", err.message);
+      pricingEl.innerHTML = '<p style="color:hsl(var(--muted-foreground));font-size:0.875rem">Could not load pricing. Check your connection.</p>';
+      ctaBtn.textContent = "Retry";
+      ctaBtn.onclick = function () { loadWebPaywallOfferings(); };
+    }
+  }
+
+  // Expose so openWebPaywall can trigger it.
+  var _originalOpenWebPaywall = openWebPaywall;
+  openWebPaywall = function (resolve) { // eslint-disable-line no-func-assign
+    _originalOpenWebPaywall(resolve);
+    loadWebPaywallOfferings();
+  };
 
   function renderExclusionTags() {
     var el = document.getElementById("exclusion-tags");
@@ -1640,65 +1985,436 @@
 
     var logAllBtn = document.getElementById("btn-log-all-meals");
     if (logAllBtn) logAllBtn.addEventListener("click", logAllMealPlan);
+
+    // ── Archive button ────────────────────────────────────────
+    var archiveBtn = document.createElement("button");
+    archiveBtn.className = "archive-btn";
+    archiveBtn.id = "btn-archive-plan";
+    archiveBtn.setAttribute("aria-label", "Archive this meal plan");
+    var alreadySaved = isCurrentPlanArchived();
+    archiveBtn.innerHTML =
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>' +
+      (alreadySaved ? "Saved to Archive" : "Archive Plan");
+    if (alreadySaved) archiveBtn.classList.add("saved");
+    archiveBtn.addEventListener("click", function () { haptic("Light"); archiveCurrentPlan(archiveBtn); });
+    el.appendChild(archiveBtn);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // ARCHIVE
+  // ══════════════════════════════════════════════════════════
+
+  var PLAN_TAGS = ["Cut", "Bulk", "Maintain", "High-Protein", "Low-Bloat", "Anti-Inflammatory", "Vegetarian", "Vegan"];
+
+  function getArchivedPlans() {
+    return cacheGet("archived_plans") || [];
+  }
+
+  // Returns true on success, false if localStorage quota was exceeded.
+  function saveArchivedPlans(plans) {
+    var ok = cacheSet("archived_plans", plans);
+    updateArchiveBadge();
+    return ok;
+  }
+
+  function updateArchiveBadge() {
+    var badge = document.getElementById("archive-badge");
+    if (!badge) return;
+    var count = getArchivedPlans().length;
+    badge.style.display = count > 0 ? "block" : "none";
+  }
+
+  function isCurrentPlanArchived() {
+    if (!mealPlanMeals || mealPlanMeals.length === 0) return false;
+    // Fingerprint by meal names (order-independent)
+    var names = mealPlanMeals.map(function (m) { return m.name; }).sort().join("|");
+    return getArchivedPlans().some(function (p) {
+      return p.meals && p.meals.map(function (m) { return m.name; }).sort().join("|") === names;
+    });
+  }
+
+  function archiveCurrentPlan(btn) {
+    if (!mealPlanMeals || mealPlanMeals.length === 0) return;
+    if (isCurrentPlanArchived()) return; // already saved
+
+    var plans = getArchivedPlans();
+    var totals = mealPlanMeals.reduce(function (acc, m) {
+      return {
+        calories: acc.calories + (m.calories || 0),
+        protein:  acc.protein  + (m.protein  || 0),
+        carbs:    acc.carbs    + (m.carbs    || 0),
+        fats:     acc.fats     + (m.fats     || 0),
+      };
+    }, { calories: 0, protein: 0, carbs: 0, fats: 0 });
+
+    var goalTag = profile.goal === "lose" ? "Cut" : profile.goal === "gain" ? "Bulk" : "Maintain";
+    var dateStr = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    var prefs = (document.getElementById("meal-preferences") && document.getElementById("meal-preferences").value.trim()) || "";
+
+    // Auto-tags: goal + detect high-protein
+    var tags = [goalTag];
+    if (profile.protein && totals.protein >= profile.protein * 0.9) tags.push("High-Protein");
+    if (prefs) {
+      if (/vegan/i.test(prefs)) tags.push("Vegan");
+      else if (/vegetarian/i.test(prefs)) tags.push("Vegetarian");
+      if (/low.?bloat/i.test(prefs)) tags.push("Low-Bloat");
+      if (/anti.?inflam/i.test(prefs)) tags.push("Anti-Inflammatory");
+    }
+
+    var plan = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      title: goalTag + " Plan \u2014 " + dateStr,
+      createdAt: new Date().toISOString(),
+      tags: tags,
+      preferences: prefs,
+      meals: mealPlanMeals.slice(),
+      macros: {
+        calories: Math.round(totals.calories),
+        protein:  Math.round(totals.protein),
+        carbs:    Math.round(totals.carbs),
+        fats:     Math.round(totals.fats),
+      },
+    };
+
+    plans.unshift(plan);
+    if (plans.length > 50) plans = plans.slice(0, 50);
+    var saved = saveArchivedPlans(plans);
+
+    if (!saved) {
+      // Storage quota exceeded — try evicting the oldest plan to make room.
+      var trimmed = plans.slice(0, Math.max(1, plans.length - 5));
+      var savedAfterTrim = saveArchivedPlans(trimmed);
+      if (!savedAfterTrim) {
+        // Still can't write — tell the user.
+        if (btn) {
+          btn.innerHTML =
+            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--destructive))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg> Save failed — storage full';
+          btn.style.borderColor = "hsl(var(--destructive))";
+          btn.style.color = "hsl(var(--destructive))";
+        }
+        showToast("Archive save failed: your device storage may be full. Try deleting old plans.");
+        return;
+      }
+    }
+
+    if (btn) {
+      btn.innerHTML =
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Saved to Archive';
+      btn.classList.add("saved");
+    }
+
+    // Optional Supabase sync
+    syncArchivedPlanToSupabase(plan);
+  }
+
+  async function syncArchivedPlanToSupabase(plan) {
+    if (!currentUser) return;
+    try {
+      await supabase.from("archived_plans").upsert({
+        id: plan.id,
+        user_id: currentUser.id,
+        title: plan.title,
+        created_at: plan.createdAt,
+        tags: plan.tags,
+        preferences: plan.preferences,
+        meals: plan.meals,
+        macros: plan.macros,
+      });
+    } catch (_) { /* local storage is the source of truth */ }
+  }
+
+  function deleteArchivedPlan(id) {
+    var plans = getArchivedPlans().filter(function (p) { return p.id !== id; });
+    saveArchivedPlans(plans);
+    if (currentUser) {
+      supabase.from("archived_plans").delete().eq("id", id).catch(function () {});
+    }
+  }
+
+  // ── Archive overlay UI ────────────────────────────────────
+
+  var archiveSearchQuery = "";
+  var archiveActiveTag = null;
+  var archiveDetailPlanId = null;
+
+  function openArchive() {
+    archiveSearchQuery = "";
+    archiveActiveTag = null;
+    document.getElementById("archive-search").value = "";
+    renderArchiveList();
+    document.getElementById("archive-overlay").classList.remove("hidden");
+  }
+
+  function closeArchive() {
+    document.getElementById("archive-overlay").classList.add("hidden");
+  }
+
+  function openArchiveDetail(id) {
+    var plan = getArchivedPlans().find(function (p) { return p.id === id; });
+    if (!plan) return;
+    archiveDetailPlanId = id;
+    document.getElementById("archive-detail-title").textContent = plan.title;
+    var content = document.getElementById("archive-detail-content");
+
+    var macroRow =
+      '<div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:1rem">' +
+      '<span class="archive-macro-chip">' + plan.macros.calories + ' cal</span>' +
+      '<span class="archive-macro-chip">' + plan.macros.protein + 'g P</span>' +
+      '<span class="archive-macro-chip">' + plan.macros.carbs + 'g C</span>' +
+      '<span class="archive-macro-chip">' + plan.macros.fats + 'g F</span>' +
+      '</div>';
+
+    var tagsHtml = plan.tags && plan.tags.length
+      ? '<div class="archive-tags" style="margin-bottom:1rem">' +
+        plan.tags.map(function (t) { return '<span class="archive-tag">' + esc(t) + '</span>'; }).join("") +
+        '</div>'
+      : "";
+
+    var dateHtml = '<p style="font-size:0.75rem;color:hsl(var(--muted-foreground));margin-bottom:1rem">' +
+      new Date(plan.createdAt).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }) +
+      '</p>';
+
+    var mealsHtml = (plan.meals || []).map(function (meal) {
+      return '<div class="card" style="margin-bottom:0.75rem">' +
+        '<p style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:hsl(var(--muted-foreground));margin-bottom:0.25rem">' +
+        esc(MEAL_PLAN_LABELS[meal.meal_type] || meal.meal_type) + '</p>' +
+        '<p style="font-size:0.9375rem;font-weight:600;color:hsl(var(--foreground));margin-bottom:0.5rem">' + esc(meal.name) + '</p>' +
+        '<div class="meal-macros" style="margin-bottom:0.625rem">' +
+        '<span class="cal">' + meal.calories + ' cal</span>' +
+        '<span class="p">' + meal.protein + 'g P</span>' +
+        '<span class="c">' + meal.carbs + 'g C</span>' +
+        '<span class="f">' + meal.fats + 'g F</span>' +
+        '</div>' +
+        '<p class="ingredients-label">Ingredients</p>' +
+        (meal.ingredients || []).map(function (ing) {
+          return '<div class="ingredient-item"><span class="ing-name">' + esc(ing.name) + '</span><span class="ing-amount">' + esc(ing.amount) + '</span></div>';
+        }).join("") +
+        '</div>';
+    }).join("");
+
+    content.innerHTML = dateHtml + macroRow + tagsHtml + mealsHtml;
+    document.getElementById("archive-detail-overlay").classList.remove("hidden");
+  }
+
+  function closeArchiveDetail() {
+    document.getElementById("archive-detail-overlay").classList.add("hidden");
+    archiveDetailPlanId = null;
+  }
+
+  function renderArchiveList() {
+    var plans = getArchivedPlans();
+
+    // Collect all unique tags for filter chips
+    var allTags = [];
+    plans.forEach(function (p) {
+      (p.tags || []).forEach(function (t) {
+        if (!allTags.includes(t)) allTags.push(t);
+      });
+    });
+
+    var filterEl = document.getElementById("archive-tag-filters");
+    filterEl.innerHTML = allTags.map(function (tag) {
+      var active = tag === archiveActiveTag;
+      return '<button class="archive-tag-filter' + (active ? " active" : "") + '" data-tag="' + esc(tag) + '">' + esc(tag) + '</button>';
+    }).join("");
+    filterEl.querySelectorAll(".archive-tag-filter").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        archiveActiveTag = btn.dataset.tag === archiveActiveTag ? null : btn.dataset.tag;
+        renderArchiveList();
+      });
+    });
+
+    // Filter by search + tag
+    var q = archiveSearchQuery.trim().toLowerCase();
+    if (q) {
+      plans = plans.filter(function (p) {
+        return p.title.toLowerCase().includes(q) ||
+          (p.preferences || "").toLowerCase().includes(q) ||
+          (p.tags || []).some(function (t) { return t.toLowerCase().includes(q); });
+      });
+    }
+    if (archiveActiveTag) {
+      plans = plans.filter(function (p) { return (p.tags || []).includes(archiveActiveTag); });
+    }
+
+    var listEl = document.getElementById("archive-list");
+    if (plans.length === 0) {
+      listEl.innerHTML = '<div class="archive-empty">' +
+        '<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 0.75rem"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>' +
+        '<p>' + (q || archiveActiveTag ? "No plans match your search." : "No saved plans yet.<br>Generate a meal plan and tap <strong>Archive Plan</strong> to save it here.") + '</p>' +
+        '</div>';
+      return;
+    }
+
+    listEl.innerHTML = plans.map(function (plan) {
+      var dateStr = new Date(plan.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      var tagsHtml = (plan.tags || []).map(function (t) {
+        return '<span class="archive-tag">' + esc(t) + '</span>';
+      }).join("");
+      return '<div class="archive-card" tabindex="0" role="button" data-plan-id="' + esc(plan.id) + '">' +
+        '<p class="archive-card-title">' + esc(plan.title) + '</p>' +
+        '<p class="archive-card-date">' + dateStr + '</p>' +
+        '<div class="archive-card-macros">' +
+        '<span class="archive-macro-chip">' + plan.macros.calories + ' cal</span>' +
+        '<span class="archive-macro-chip">' + plan.macros.protein + 'g P</span>' +
+        '<span class="archive-macro-chip">' + plan.macros.carbs + 'g C</span>' +
+        '<span class="archive-macro-chip">' + plan.macros.fats + 'g F</span>' +
+        '</div>' +
+        (tagsHtml ? '<div class="archive-tags">' + tagsHtml + '</div>' : '') +
+        '</div>';
+    }).join("");
+
+    listEl.querySelectorAll(".archive-card").forEach(function (card) {
+      card.addEventListener("click", function () { haptic("Light"); openArchiveDetail(card.dataset.planId); });
+      card.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openArchiveDetail(card.dataset.planId); }
+      });
+    });
   }
 
   async function generateMealPlan() {
+    // ── Entitlement gate ─────────────────────────────────────
+    if (!isProUser) {
+      console.log("[Purchase] Generate tapped — not Pro. Presenting paywall.");
+      haptic("Medium");
+      var result = await PurchaseManager.presentPaywall();
+      if (!result.isPro) return; // still not Pro after paywall dismissed
+    }
+    // ──────────────────────────────────────────────────────────
     if (mealPlanLoading) return;
     mealPlanLoading = true;
     mealPlanMeals = [];
     savedMealPlanId = null;
     loggedMealIndices = new Set();
+
+    // Disable the generate button for the duration of the request.
+    var genBtn = document.getElementById("btn-generate-meal");
+    if (genBtn) { genBtn.disabled = true; genBtn.setAttribute("aria-busy", "true"); }
+
     renderMealPlanOutput();
+
+    // 30-second hard timeout — Supabase Functions default is 60 s which is too long
+    // to block the UI with a spinner; surface an actionable message at 30 s instead.
+    var genTimeoutHandle;
+    var genTimeoutPromise = new Promise(function (_, reject) {
+      genTimeoutHandle = setTimeout(function () {
+        reject(new Error("The AI is taking too long. Please check your connection and try again."));
+      }, 30000);
+    });
 
     try {
       var prefs = document.getElementById("meal-preferences").value.trim();
       var exclusions = profile.exclusions || [];
-      // Build combined preferences string including exclusions
       var fullPrefs = prefs || "";
       if (exclusions.length > 0) {
         var excludeStr = "MUST NOT include these foods (allergies/dislikes): " + exclusions.join(", ");
         fullPrefs = fullPrefs ? fullPrefs + ". " + excludeStr : excludeStr;
       }
-      var { data, error } = await supabase.functions.invoke("generate-meal-plan", {
-        body: {
-          calories: profile.calories,
-          protein: profile.protein,
-          carbs: profile.carbs,
-          fats: profile.fats,
-          preferences: fullPrefs || undefined,
-        },
-      });
+
+      console.log("[MacroCore AI] Invoking generate-meal-plan at", new Date().toISOString());
+      var invokeResult = await Promise.race([
+        supabase.functions.invoke("generate-meal-plan", {
+          body: {
+            calories: profile.calories,
+            protein: profile.protein,
+            carbs: profile.carbs,
+            fats: profile.fats,
+            preferences: fullPrefs || undefined,
+          },
+        }),
+        genTimeoutPromise,
+      ]);
+      clearTimeout(genTimeoutHandle);
+
+      var data = invokeResult.data;
+      var error = invokeResult.error;
+      console.log("[MacroCore AI] Response — error:", !!error, "has meals:", !!(data && data.meals));
 
       if (error) {
         var errMsg = error.message || "Request failed";
+        var errStatus = error.context && error.context.status;
+        // Try to extract structured error body from the response context.
         if (error.context) {
           try {
             var errBody = await error.context.json();
-            if (errBody.error) errMsg = errBody.error;
+            if (errBody && errBody.error) errMsg = errBody.error;
           } catch (_) {}
+        }
+        // Map common AI-generation-specific status codes to readable copy.
+        if (errStatus === 429 || errMsg.toLowerCase().includes("rate limit") || errMsg.toLowerCase().includes("too many")) {
+          errMsg = "You've hit the AI rate limit. Please wait a moment, then try again.";
+        } else if (errStatus === 503 || errMsg.toLowerCase().includes("service unavailable")) {
+          errMsg = "The AI service is temporarily unavailable. Please try again in a minute.";
+        } else if (errStatus === 401 || errStatus === 403) {
+          errMsg = "AI access error. Please sign out and back in, then try again.";
         }
         throw new Error(errMsg);
       }
+
+      // Guard: server returned 200 but body was null or not an object.
+      if (!data || typeof data !== "object") {
+        throw new Error("Received an unexpected response. Please try again.");
+      }
       if (data.error) throw new Error(data.error);
 
-      mealPlanMeals = (data.meals || []).sort(function (a, b) {
-        return MEAL_PLAN_ORDER.indexOf(a.meal_type) - MEAL_PLAN_ORDER.indexOf(b.meal_type);
-      });
+      // Validate and normalise each meal before rendering.
+      var rawMeals = Array.isArray(data.meals) ? data.meals : [];
+      if (rawMeals.length === 0) {
+        throw new Error("The AI returned an empty meal plan. Please try again with different preferences.");
+      }
+      mealPlanMeals = rawMeals
+        .map(normaliseMeal)
+        .filter(function (m) { return m !== null; })
+        .sort(function (a, b) {
+          return MEAL_PLAN_ORDER.indexOf(a.meal_type) - MEAL_PLAN_ORDER.indexOf(b.meal_type);
+        });
+      if (mealPlanMeals.length === 0) {
+        throw new Error("The AI returned meals with missing data. Please try again.");
+      }
 
       cacheMealPlan();
       saveMealPlanToSupabase(prefs);
     } catch (e) {
-      console.error(e);
-      var el = document.getElementById("meal-plan-output");
-      el.innerHTML =
-        '<div class="card" style="text-align:center;padding:2rem">' +
-        '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--destructive))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 0.5rem"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>' +
-        '<p style="font-size:0.875rem;color:hsl(var(--foreground));font-weight:500">Failed to generate meal plan</p>' +
-        '<p style="font-size:0.75rem;color:hsl(var(--muted-foreground));margin-top:0.25rem">' + esc(e.message || "Please try again") + "</p></div>";
+      clearTimeout(genTimeoutHandle);
+      console.error("[MacroCore AI] Error:", e.message);
+      var elErr = document.getElementById("meal-plan-output");
+      if (elErr) {
+        elErr.innerHTML =
+          '<div class="card" style="text-align:center;padding:2rem">' +
+          '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="hsl(var(--destructive))" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin:0 auto 0.5rem"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/></svg>' +
+          '<p style="font-size:0.875rem;color:hsl(var(--foreground));font-weight:500">Failed to generate meal plan</p>' +
+          '<p style="font-size:0.75rem;color:hsl(var(--muted-foreground));margin-top:0.25rem">' + esc(e.message || "Please try again") + "</p>" +
+          '<button class="btn btn-ghost" style="margin-top:1rem;font-size:0.8125rem" id="btn-retry-generate">Try Again</button>' +
+          '</div>';
+        var retryBtn = document.getElementById("btn-retry-generate");
+        if (retryBtn) retryBtn.addEventListener("click", function () { haptic(); generateMealPlan(); });
+      }
     } finally {
       mealPlanLoading = false;
+      if (genBtn) { genBtn.disabled = false; genBtn.removeAttribute("aria-busy"); }
       if (mealPlanMeals.length > 0) renderMealPlanOutput();
     }
+  }
+
+  // Normalises a raw meal object from the AI response.
+  // Returns null if the object is too malformed to display safely.
+  // KEEP IN SYNC with src/lib/mealPlanUtils.ts (tested there).
+  function normaliseMeal(raw) {
+    if (!raw || typeof raw !== "object") return null;
+    // meal_type and name are required — without them the card has no identity.
+    if (typeof raw.name !== "string" || !raw.name.trim()) return null;
+    return {
+      meal_type:    typeof raw.meal_type === "string" ? raw.meal_type : "snack",
+      name:         raw.name.trim(),
+      calories:     Math.max(0, Number(raw.calories) || 0),
+      protein:      Math.max(0, Number(raw.protein)  || 0),
+      carbs:        Math.max(0, Number(raw.carbs)    || 0),
+      fats:         Math.max(0, Number(raw.fats)     || 0),
+      prep_time_min: Math.max(0, Number(raw.prep_time_min) || 0),
+      ingredients:  Array.isArray(raw.ingredients)
+        ? raw.ingredients.filter(function (i) { return i && typeof i.name === "string"; })
+        : [],
+    };
   }
 
   // ══════════════════════════════════════════════════════════
@@ -2506,6 +3222,14 @@
       checkWeeklyAutoAdjust();
       initReminders();
       initNetworkMonitoring();
+      updateArchiveBadge();
+      // Refresh entitlement from RevenueCat (fire-and-forget; cached value used first).
+      PurchaseManager.refreshEntitlements();
+      PurchaseManager.initListener();
+      // Re-check on page visibility change (tab switch / app resume from browser).
+      document.addEventListener("visibilitychange", function () {
+        if (document.visibilityState === "visible") PurchaseManager.refreshEntitlements();
+      });
       handleRoute();
     } else {
       showOnboarding();
@@ -2521,11 +3245,37 @@
     // `bottom: 0` tracks the visual viewport. Lock overlays to the pre-keyboard
     // screen height via a CSS variable set once at load time.
     function setScreenHeight() {
-      document.documentElement.style.setProperty('--screen-height', window.innerHeight + 'px');
+      // Use visualViewport.height when available (correct on iPad floating keyboard,
+      // Split View resize, and Stage Manager). Fall back to window.innerHeight.
+      var h = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+      document.documentElement.style.setProperty('--screen-height', h + 'px');
     }
     setScreenHeight();
-    window.addEventListener('orientationchange', function () {
-      setTimeout(setScreenHeight, 300);
+    // visualViewport fires on every keyboard show/hide and Split View resize.
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', setScreenHeight);
+    } else {
+      window.addEventListener('orientationchange', function () {
+        setTimeout(setScreenHeight, 300);
+      });
+    }
+
+    // Scroll the focused auth / onboarding input above the keyboard on iPad.
+    // On iOS the WKWebView scroll lock means the input can stay behind the
+    // software keyboard; scrollIntoView() with a small delay fixes it.
+    document.addEventListener('focusin', function (e) {
+      var target = e.target;
+      if (!target || !target.tagName) return;
+      var tag = target.tagName.toLowerCase();
+      if (tag !== 'input' && tag !== 'textarea') return;
+      // Only act inside overlays that might be obscured by the keyboard.
+      var inAuth = document.getElementById('auth-overlay') && document.getElementById('auth-overlay').contains(target);
+      var inOnboarding = document.getElementById('onboarding') && document.getElementById('onboarding').contains(target);
+      if (!inAuth && !inOnboarding) return;
+      // Delay lets the keyboard animation start first.
+      setTimeout(function () {
+        try { target.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) {}
+      }, 350);
     });
 
     // Prevent iOS WKWebView from shifting window scroll when keyboard opens.
@@ -2694,6 +3444,43 @@
 
     // Meal plan generate
     document.getElementById("btn-generate-meal").addEventListener("click", generateMealPlan);
+
+    // Web paywall overlay (fallback when native bridge is unavailable)
+    document.getElementById("btn-paywall-close").addEventListener("click", function () { closeWebPaywall(false); });
+    document.getElementById("paywall-overlay").addEventListener("click", function (e) {
+      if (e.target === document.getElementById("paywall-overlay")) closeWebPaywall(false);
+    });
+    document.getElementById("btn-paywall-restore").addEventListener("click", async function () {
+      var btn = document.getElementById("btn-paywall-restore");
+      btn.textContent = "Restoring...";
+      btn.disabled = true;
+      var res = await PurchaseManager.restorePurchases();
+      btn.textContent = "Restore Purchases";
+      btn.disabled = false;
+      if (res.isPro) closeWebPaywall(true);
+    });
+
+    // Archive overlay
+    document.getElementById("btn-open-archive").addEventListener("click", function () { haptic("Light"); openArchive(); });
+    document.getElementById("btn-close-archive").addEventListener("click", closeArchive);
+    document.getElementById("archive-overlay").addEventListener("click", function (e) {
+      if (e.target === document.getElementById("archive-overlay")) closeArchive();
+    });
+    document.getElementById("archive-search").addEventListener("input", function (e) {
+      archiveSearchQuery = e.target.value;
+      renderArchiveList();
+    });
+    document.getElementById("btn-close-archive-detail").addEventListener("click", closeArchiveDetail);
+    document.getElementById("archive-detail-overlay").addEventListener("click", function (e) {
+      if (e.target === document.getElementById("archive-detail-overlay")) closeArchiveDetail();
+    });
+    document.getElementById("btn-archive-detail-delete").addEventListener("click", function () {
+      if (!archiveDetailPlanId) return;
+      if (!window.confirm("Delete this saved plan? This cannot be undone.")) return;
+      deleteArchivedPlan(archiveDetailPlanId);
+      closeArchiveDetail();
+      renderArchiveList();
+    });
 
     // Exclusion tags
     document.getElementById("btn-add-exclusion").addEventListener("click", addExclusion);

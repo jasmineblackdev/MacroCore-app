@@ -220,7 +220,8 @@
 
   // ── State ────────────────────────────────────────────────
   let currentUser = null;
-  let guestMode = false;
+  let guestMode = localStorage.getItem("mc_local_mode") === "1";
+  let appStarted = false;
 
   // ── Pro entitlement (persisted in localStorage as mc_is_pro) ──
   // Bootstrapped from cache so the gate renders correctly before the
@@ -310,11 +311,24 @@
 
   let authMode = "signin"; // "signin" | "signup"
 
-  function showAuth() {
+  function showAuthChoice() {
     document.getElementById("auth-overlay").classList.remove("hidden");
+    document.getElementById("auth-panel-choice").style.display = "";
+    document.getElementById("auth-panel-form").style.display = "none";
     document.getElementById("onboarding").style.display = "none";
     document.getElementById("bottom-nav").style.display = "none";
   }
+
+  function showAuthForm() {
+    document.getElementById("auth-overlay").classList.remove("hidden");
+    document.getElementById("auth-panel-choice").style.display = "none";
+    document.getElementById("auth-panel-form").style.display = "";
+    document.getElementById("onboarding").style.display = "none";
+    document.getElementById("bottom-nav").style.display = "none";
+  }
+
+  // Alias — called by SIGNED_OUT and other existing code paths
+  function showAuth() { showAuthChoice(); }
 
   function hideAuth() {
     document.getElementById("auth-overlay").classList.add("hidden");
@@ -557,18 +571,58 @@
   function handleGuestLogin() {
     guestMode = true;
     currentUser = null;
+    try { localStorage.setItem("mc_local_mode", "1"); } catch (_) {}
     startApp();
+  }
+
+  // Switches from local mode to the auth form WITHOUT wiping data.
+  // On successful sign-in/sign-up the existing Supabase sync uploads local data.
+  function switchToAccountMode() {
+    guestMode = false;
+    appStarted = false; // allow onAuthStateChange to call startApp() again
+    try { localStorage.removeItem("mc_local_mode"); } catch (_) {}
+    showAuthForm();
   }
 
   function handleGuestSignOut() {
     guestMode = false;
     currentUser = null;
+    appStarted = false;
+    try { localStorage.removeItem("mc_local_mode"); } catch (_) {}
     profile = { ...DEFAULT_PROFILE };
     foodEntries = [];
     weightLogs = [];
     mealPlanMeals = [];
     adjustments = [];
-    showAuth();
+    showAuthChoice();
+  }
+
+  function exportData() {
+    var data = {
+      exportedAt: new Date().toISOString(),
+      profile: profile,
+      foodEntries: foodEntries,
+      weightLogs: weightLogs,
+      mealPlanMeals: mealPlanMeals,
+      adjustments: adjustments,
+      archivedPlans: cacheGet("archived_plans") || []
+    };
+    var json = JSON.stringify(data, null, 2);
+    if (_Plugins.Share) {
+      try {
+        _Plugins.Share.share({ title: "MacroCore Data Export", text: json, dialogTitle: "Export your data" });
+        return;
+      } catch (_) {}
+    }
+    try {
+      var blob = new Blob([json], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement("a");
+      a.href = url; a.download = "macrocore-data-" + todayStr() + ".json";
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a); URL.revokeObjectURL(url);
+      showToast("Data exported!");
+    } catch (_) { showToast("Export not supported on this device."); }
   }
 
   async function handleDeleteAccount() {
@@ -2706,11 +2760,14 @@
         .join("") +
       '<div style="margin-top:1.5rem;display:flex;flex-direction:column;gap:0.5rem">' +
       '<button class="btn btn-ghost" id="btn-reset-onboarding" style="width:100%">Reset Onboarding</button>' +
+      '<button class="btn btn-ghost" id="btn-export-data" style="width:100%">' +
+        '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>' +
+        ' Export My Data</button>' +
       (guestMode
         ? '<div style="background:hsl(var(--surface));border:1px solid hsl(var(--border));border-radius:1rem;padding:1rem;text-align:center;margin-top:0.5rem">' +
-          '<p style="font-size:0.8125rem;color:hsl(var(--muted-foreground));margin-bottom:0.75rem">You\'re exploring as a guest. Create a free account to sync your data across devices.</p>' +
-          '<button class="btn btn-primary" id="btn-create-account" style="width:100%;margin-bottom:0.5rem">Create Free Account</button>' +
-          '<button class="btn btn-ghost" id="btn-guest-sign-out" style="width:100%;font-size:0.8125rem">Exit Guest Mode</button>' +
+          '<p style="font-size:0.8125rem;color:hsl(var(--muted-foreground));margin-bottom:0.75rem">Your data is stored on this device. Sign in to back up and sync across devices.</p>' +
+          '<button class="btn btn-primary" id="btn-create-account" style="width:100%;margin-bottom:0.5rem">Sign In / Create Account</button>' +
+          '<button class="btn btn-ghost" id="btn-guest-sign-out" style="width:100%;font-size:0.8125rem;color:hsl(var(--destructive))">Reset &amp; Clear All Data</button>' +
           '</div>'
         : '<button class="btn btn-ghost" id="btn-sign-out" style="width:100%">' +
           '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg> Sign Out</button>' +
@@ -2727,11 +2784,13 @@
       showOnboarding();
     });
 
+    document.getElementById("btn-export-data").addEventListener("click", exportData);
+
     if (guestMode) {
-      document.getElementById("btn-create-account").addEventListener("click", function () {
-        handleGuestSignOut();
+      document.getElementById("btn-create-account").addEventListener("click", switchToAccountMode);
+      document.getElementById("btn-guest-sign-out").addEventListener("click", function () {
+        if (window.confirm("This will erase all your local data. Continue?")) handleGuestSignOut();
       });
-      document.getElementById("btn-guest-sign-out").addEventListener("click", handleGuestSignOut);
     } else {
       document.getElementById("btn-sign-out").addEventListener("click", handleSignOut);
       document.getElementById("btn-delete-account").addEventListener("click", handleDeleteAccount);
@@ -3357,11 +3416,13 @@
     // Auth events
     document.getElementById("auth-form").addEventListener("submit", handleAuthSubmit);
     document.getElementById("auth-toggle-btn").addEventListener("click", toggleAuthMode);
-    document.getElementById("btn-guest").addEventListener("click", handleGuestLogin);
+    document.getElementById("btn-local-mode").addEventListener("click", handleGuestLogin);
+    document.getElementById("btn-show-signin").addEventListener("click", showAuthForm);
+    document.getElementById("btn-auth-back").addEventListener("click", showAuthChoice);
 
-    // Auth state listener
-    var appStarted = false;
+    // Auth state listener — always active so switchToAccountMode() works from Settings
     supabase.auth.onAuthStateChange(function (event, session) {
+      if (guestMode) return; // local mode: ignore Supabase events
       if (session && session.user) {
         currentUser = session.user;
         if (!appStarted) {
@@ -3377,6 +3438,7 @@
 
     // Check for existing session (fallback if onAuthStateChange doesn't fire)
     supabase.auth.getSession().then(function (result) {
+      if (guestMode) return; // local mode: already started or about to start below
       var session = result.data.session;
       if (session && session.user) {
         currentUser = session.user;
@@ -3388,6 +3450,12 @@
         showAuth();
       }
     });
+
+    // If local mode was persisted, start immediately without waiting for Supabase
+    if (guestMode) {
+      appStarted = true;
+      startApp();
+    }
 
     // Router
     window.addEventListener("hashchange", handleRoute);
